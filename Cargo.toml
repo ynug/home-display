@@ -1,6 +1,6 @@
 [package]
 name = "home-display"
-version = "0.0.3"
+version = "0.0.4"
 edition = "2024"
 rust-version = "1.98"
 description = "Always-on home information display (clock, calendar, weather, earthquakes, rain radar) built with Rust and Slint"
@@ -68,8 +68,10 @@ Always-on home information display rendered directly on DRM/KMS with Slint.
 Shows the clock, Japanese holidays, an iCal calendar (today and tomorrow),
 weather (Open-Meteo), earthquake information (JMA XML, P2PQuake fallback) and
 a rain radar (JMA nowcast with 1-hour forecast, RainViewer fallback)."""
-# $auto resolves shared-library dependencies via dpkg-shlibdeps.
-depends = "$auto, fonts-noto-cjk, ca-certificates, adduser"
+# $auto resolves shared-library dependencies via dpkg-shlibdeps. EGL / GLES are
+# loaded at run time (dlopen), so shlibdeps cannot see them: list them here.
+# Without them the GPU renderer fails to start (seen on Raspberry Pi 4, v0.0.3).
+depends = "$auto, libegl1, libegl-mesa0, libgles2, fonts-noto-cjk, ca-certificates, adduser"
 recommends = "libgl1-mesa-dri"
 maintainer-scripts = "packaging/debian/"
 conf-files = ["/etc/home-display/config.toml"]

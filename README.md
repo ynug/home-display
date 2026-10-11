@@ -311,12 +311,16 @@ Release から `.deb` を取得し、iCal URL・地点の入力、自動起動�
 GitHub Actions がビルドした `.deb`（amd64 / arm64）を使います。どのプロファイルでも同じパッケージです。
 
 ```sh
+sudo apt update
 sudo apt install ./home-display_*_arm64.deb
 sudo nano /etc/home-display/home-display.env     # HOME_DISPLAY_ICAL_URL を記入（0600）
 sudo nano /etc/home-display/config.toml          # 地点・プロファイルなど（任意。設定画面でも可）
 sudo systemctl start home-display
 journalctl -u home-display -f
 ```
+
+v0.0.3 以前の `.deb` は EGL / GLES のライブラリを依存に含めていないため、先に
+`sudo apt install libegl1 libegl-mesa0 libgles2` が必要です（Raspberry Pi 4 で確認。v0.0.4 で修正）。
 
 `.deb` の内容:
 
@@ -392,11 +396,13 @@ mise run check    # = cargo fmt --check → cargo clippy --all-targets -D warnin
 | ライブ取得: 気象庁ナウキャスト（実測・予測）+ 地理院タイル / 気象庁XML（地震）/ Open-Meteo / 内閣府 CSV | ✅ macOS から実データで確認 |
 | 代替経路: 気象庁 URL を故意に 404 にして RainViewer / P2P地震情報へ自動切替 | ✅ 実データで確認 |
 | 雨雲取得中は Radar に切り替えない・進捗の毎秒更新・表示時間の自動計算 | ✅ 実ウィンドウで確認 |
-| デスクトップのウィンドウサイズ固定 | ⚠️ 実装済み（Slint の仕様をソースで確認）。手動での操作確認は未実施 |
-| ライブ取得: iCal | ⚠️ 実 URL では未確認（パーサーは単体テストと fixture で確認） |
+| デスクトップのウィンドウサイズ固定 | ✅ 手動で確認済み |
+| ライブ取得: iCal | ✅ Raspberry Pi 4 で実際の iCal URL から取得・表示を確認 |
 | `--features kms` のコンパイル（macOS ホスト） | ✅ |
-| Linux amd64 / arm64 ビルド・`.deb` 生成（CI） | ⏳ ワークフロー作成済み・未実行 |
-| LinuxKMS・DRM/KMS・GPU・libinput・systemd の実機動作 | ⏳ **未検証**（[手順](docs/linux-kms.md)） |
+| Linux amd64 / arm64 ビルド・`.deb` 生成（GitHub Actions） | ✅ 成功 |
+| Raspberry Pi 4: `.deb` のインストール・systemd での起動・LinuxKMS（GPU）での表示 | ✅ 確認済み（v0.0.3。EGL / GLES のライブラリを手動で追加する必要があった → v0.0.4 で `.deb` の依存に追加） |
+| v0.0.4 の `.deb` だけで追加作業なしに起動すること | ⏳ 未確認 |
+| libinput（キー・タッチ）・CPU 描画（`linuxkms-software`）・720p など他の解像度 | ⏳ **未検証**（[手順](docs/linux-kms.md)） |
 | Raspberry Pi での性能・長時間稼働 | ⏳ **未検証** |
 | Raspberry Pi 用インストールスクリプト（`install.sh`） | ⏳ **未検証**（構文チェックのみ。実機・Release からのダウンロードは未実行） |
 | 日付が変わった直後の予定の取り直し | ⚠️ 待ち時間の計算は単体テストで確認。実際に 0 時をまたぐ動作は未確認 |

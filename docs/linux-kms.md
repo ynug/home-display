@@ -14,12 +14,12 @@ DRM/KMS へ直接描画）の検証手順と、現時点での検証状況をま
 |---|---|
 | `--features kms` の Rust コードがコンパイルできる (macOS ホストで `cargo check`) | ✅ 確認済み |
 | aarch64-linux へのクロス `cargo check` | ❌ 未実施（C クロスコンパイラ / sysroot がないため `aws-lc-sys`・`fontconfig-sys` のビルドスクリプトで停止） |
-| GitHub Actions のネイティブ amd64 / arm64 ビルドと `.deb` 生成 | ⏳ ワークフローは作成済み・**未実行** |
-| LinuxKMS (femtovg / OpenGL ES) で全画面表示 | ⏳ 未検証 |
+| GitHub Actions のネイティブ amd64 / arm64 ビルドと `.deb` 生成 | ✅ 成功 |
+| LinuxKMS (femtovg / OpenGL ES) で全画面表示 | ✅ Raspberry Pi 4 で起動・表示を確認（EGL / GLES の手動追加が必要だった。v0.0.4 で依存に追加） |
 | LinuxKMS (software renderer) で全画面表示 | ⏳ 未検証 |
 | root 以外 (video/render/input グループ) で DRM master を取得できる | ⏳ 未検証 |
 | libinput によるキー入力・タッチ | ⏳ 未検証 |
-| systemd ユニットの hardening 下での起動 | ⏳ 未検証 |
+| systemd ユニットの hardening 下での起動 | ✅ Raspberry Pi 4 で `.deb` のサービスとして起動を確認 |
 | 72 時間以上の連続稼働でメモリが増え続けない | ⏳ 未検証 |
 | 1280×720 出力 + `SLINT_SCALE_FACTOR=0.6667` | ⏳ 未検証 |
 
@@ -31,9 +31,18 @@ DRM/KMS へ直接描画）の検証手順と、現時点での検証状況をま
 - 1 つのコネクターにモニターが接続されていること。
 
 ### 実行時パッケージ（`.deb` の Depends で自動解決）
-`libinput10`, `libudev1`, `libxkbcommon0`, `libgbm1`, `libegl1`, `libgles2`, `libdrm2`,
+`libinput10`, `libudev1`, `libxkbcommon0`, `libgbm1`, `libegl1`, `libegl-mesa0`, `libgles2`, `libdrm2`,
 `libfontconfig1`, `libfreetype6`, `fonts-noto-cjk`, `ca-certificates`
-（GPU 描画には Mesa の DRI ドライバー `libgl1-mesa-dri` / `libegl-mesa0` が必要です）
+（GPU 描画には Mesa の DRI ドライバー `libgl1-mesa-dri` も必要です。Recommends で入ります）
+
+EGL / GLES は実行時に読み込まれる（dlopen）ため、自動検出（dpkg-shlibdeps）では依存に入りません。
+v0.0.4 からは `Cargo.toml` で明示しています。**v0.0.3 以前の `.deb` では入らないので**、次を先に実行してください
+（Raspberry Pi 4 で、これがないと起動しないことを確認済み）。
+
+```sh
+sudo apt update
+sudo apt install libegl1 libegl-mesa0 libgles2
+```
 
 ### ビルド時パッケージ（ネイティブビルドの場合）
 ```sh

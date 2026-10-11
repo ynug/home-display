@@ -3,8 +3,9 @@
 GitHub Actions がビルドした `.deb` を、Raspberry Pi に入れて電源投入時に自動で表示させる手順です。
 作業はすべて別の PC から SSH で行えます（Pi 側にマウス・キーボードは不要です）。
 
-> **未検証:** この手順とインストールスクリプトは、まだ Raspberry Pi の実機で試していません。
-> 初回は [linux-kms.md](linux-kms.md) の PoC 手順と合わせて確認してください。
+> **検証状況:** Raspberry Pi 4 で `.deb`（v0.0.3）をインストールし、起動・表示できることを確認しました。
+> v0.0.3 以前の `.deb` では、先に EGL / GLES のライブラリを入れる必要があります（下記「v0.0.3 以前の場合」）。
+> 長時間稼働やタッチ操作などは未確認です（[linux-kms.md](linux-kms.md)）。
 
 ## 必要なもの
 
@@ -73,6 +74,17 @@ sudo bash install.sh --repo OWNER/REPO
 
 インストール後は電源を入れるだけで表示が始まります（`home-display.service` が自動起動し、
 異常終了しても 5 秒後に再起動します）。
+
+### v0.0.3 以前の場合（画面が出ない）
+
+v0.0.3 以前の `.deb` は、GPU 描画に必要な EGL / GLES のライブラリを依存に含めていません。
+インストール前（または後）に次を実行してから、`sudo systemctl restart home-display` してください。
+v0.0.4 からは `.deb` の依存に含まれるので不要です。
+
+```sh
+sudo apt update
+sudo apt install libegl1 libegl-mesa0 libgles2
+```
 
 ### その他の指定方法
 
