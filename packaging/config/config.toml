@@ -1,0 +1,109 @@
+# Home Display configuration (installed as /etc/home-display/config.toml).
+# Every key is optional; missing keys use the built-in defaults shown here.
+# Validate with:  home-display --check-config --config /etc/home-display/config.toml
+# Values saved on the settings screen (S → W: profile, rotation, durations,
+# map zoom, location) override this file; precedence:
+# command line > settings screen (saved) > this file > built-in defaults.
+# The only environment variable used is the secret HOME_DISPLAY_ICAL_URL.
+
+# "live" fetches real data; "fixture" shows bundled SAMPLE data (labelled on screen).
+mode = "live"
+# Scenario used when mode = "fixture" (home-display --list-fixtures).
+fixture_scenario = "default"
+
+[location]
+# Can also be set on the settings screen. Copy "lat, lon" from Google Maps
+# (right-click a place) — there is no place search.
+name = "東京"
+latitude = 35.6812
+longitude = 139.7671
+timezone = "Asia/Tokyo"
+
+[display]
+# full | balanced | low   (can also be changed on the settings screen)
+profile = "balanced"
+# Empty = Noto Sans CJK JP on Linux (package fonts-noto-cjk), Hiragino Sans on macOS.
+font_family = ""
+# The UI is designed for 1920x1080 logical pixels. For a 1280x720 output use 0.6667.
+# scale_factor = 1.0
+# Show seconds on the clock (redraws the clock once per second).
+show_seconds = true
+
+[rotation]
+enabled = true
+overview_seconds = 20
+# 0 = automatic: the radar animation (past hour → forecast hour) plays twice
+# (≈ 18.5 s on Balanced/Full, 10 s for Low's static image). Rotation waits on
+# Overview until the first radar download has finished.
+radar_seconds = 0
+settings_timeout_seconds = 120
+
+[calendar]
+# The secret iCal URL is NOT stored here. Provide it via (first match wins):
+#   1. environment variable HOME_DISPLAY_ICAL_URL (e.g. /etc/home-display/home-display.env, mode 0600)
+#   2. systemd credential "ical-url" (LoadCredential=ical-url:/etc/home-display/ical-url)
+#   3. ical_url_file = "/etc/home-display/ical-url"   (file containing only the URL, mode 0600)
+refresh_minutes = 10
+stale_minutes = 60
+horizon_days = 3
+
+[weather]
+# live = Open-Meteo (no API key, CC BY 4.0) | fixture | disabled
+provider = "live"
+refresh_minutes = 15
+stale_minutes = 90
+
+[earthquake]
+# live | fixture | disabled
+provider = "live"
+# jma = 気象庁 防災情報XML (official; ~30 MB/day) | p2pquake = P2P地震情報 API
+source = "jma"
+# Use P2P地震情報 automatically when the JMA feed cannot be fetched.
+fallback = true
+refresh_seconds = 60
+stale_minutes = 15
+highlight_hours = 24
+
+[radar]
+# live | fixture | disabled
+provider = "live"
+# jma = 気象庁 高解像度降水ナウキャスト (observations + 60-min forecast)
+# rainviewer = RainViewer (past only; personal/educational use)
+source = "jma"
+# Use RainViewer automatically when the JMA tiles cannot be fetched.
+fallback = true
+# 5–11 (default 9 ≈ 340 km wide around Tokyo; each step halves/doubles the area).
+# Can also be changed (and saved) on the settings screen with "," / ".".
+map_zoom = 9
+color_scheme = 2
+smooth = true
+stale_minutes = 40
+# Map centre (defaults to [location]); refresh_seconds overrides the profile value.
+# latitude = 34.6937
+# longitude = 135.5023
+# center_name = "大阪"
+# refresh_seconds = 600
+basemap_cache_days = 30
+
+[holiday]
+# live = Cabinet Office CSV, cached locally; bundled snapshot used until first download.
+provider = "live"
+refresh_days = 7
+
+# Per-profile tuning. Any field may be overridden; the rest keep their defaults.
+# [profiles.full]
+# radar_frames = 13         # observed frames incl. the latest (60 min at 5-min steps)
+# radar_step_minutes = 5    # 5 or 10 (RainViewer fallback is always 10)
+# radar_forecast_frames = 12  # JMA forecast frames after "now" (0 = none, max 12)
+# radar_frame_ms = 300      # 0 = no animation
+# radar_refresh_secs = 300
+# radar_scale = 1.0         # composite resolution relative to 1376x1012
+# keep_radar_decoded = true # keep decoded frames while the radar screen is hidden
+# visual_effects = true     # gradients / shadows
+# max_events = 2         # today's rows below the next event (tomorrow is shown below)
+# hourly_cells = 8
+#
+# [profiles.low]
+# radar_frames = 1
+# radar_frame_ms = 0
+# visual_effects = false

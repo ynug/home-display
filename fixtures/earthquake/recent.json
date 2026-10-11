@@ -1,0 +1,5 @@
+[
+{"code": 551, "id": "fixture-a", "_comment": "SAMPLE fixture - not a real earthquake", "earthquake": {"domesticTsunami": "None", "foreignTsunami": "Unknown", "hypocenter": {"depth": 60, "latitude": 0, "longitude": 0, "magnitude": 4.2, "name": "千葉県北西部"}, "maxScale": 30, "time": "{{AGO:35}}"}, "issue": {"source": "気象庁", "time": "{{AGO:32}}", "type": "DetailScale"}},
+{"code": 551, "id": "fixture-b", "_comment": "SAMPLE fixture - not a real earthquake", "earthquake": {"domesticTsunami": "None", "foreignTsunami": "Unknown", "hypocenter": {"depth": 50, "latitude": 0, "longitude": 0, "magnitude": 2.9, "name": "茨城県南部"}, "maxScale": 10, "time": "{{AGO:312}}"}, "issue": {"source": "気象庁", "time": "{{AGO:309}}", "type": "DetailScale"}},
+{"code": 551, "id": "fixture-c", "_comment": "SAMPLE fixture - not a real earthquake", "earthquake": {"domesticTsunami": "None", "foreignTsunami": "Unknown", "hypocenter": {"depth": 40, "latitude": 0, "longitude": 0, "magnitude": 4.0, "name": "福島県沖"}, "maxScale": 20, "time": "{{AGO:1500}}"}, "issue": {"source": "気象庁", "time": "{{AGO:1497}}", "type": "DetailScale"}}
+]

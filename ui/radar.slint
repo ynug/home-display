@@ -1,0 +1,393 @@
+import { Theme } from "theme.slint";
+import { Card, StatusDot, Pill, SectionTitle, StaleBadge, Placeholder } from "components.slint";
+import { WeatherIcon, LocationMarker } from "icons.slint";
+import { HeaderData, ClockData, WeatherView, RadarView, PanelState, Health } from "types.slint";
+
+// JMA precipitation scale (mm/h), colours sampled from the nowcast tiles.
+component Legend inherits VerticalLayout {
+    spacing: 8px;
+    Text { text: "降水の強さ (mm/h)"; font-size: 18px; font-weight: 600; color: Theme.text-tertiary; }
+    HorizontalLayout {
+        spacing: 2px;
+        height: 16px;
+        for c in [#F2F2FF, #A0D2FF, #218CFF, #0041FF, #FAF500, #FF9900, #FF2800, #B40068]: Rectangle {
+            horizontal-stretch: 1;
+            background: c;
+        }
+    }
+    HorizontalLayout {
+        spacing: 2px;
+        height: 18px;
+        for l in ["", "1", "5", "10", "20", "30", "50", "80"]: Rectangle {
+            horizontal-stretch: 1;
+            Text {
+                x: -5px;
+                text: l;
+                font-size: 14px;
+                color: Theme.text-tertiary;
+            }
+        }
+    }
+}
+
+// One segment per frame; observations in cyan, forecasts in violet.
+component Timeline inherits VerticalLayout {
+    in property <[bool]> forecast;
+    in property <[string]> ticks;
+    in property <int> index;
+    in property <int> now-index;
+    in property <length> cell: 48px;
+    spacing: 6px;
+    HorizontalLayout {
+        spacing: 3px;
+        height: 10px;
+        alignment: start;
+        for f[i] in root.forecast: Rectangle {
+            width: root.cell;
+            Rectangle {
+                y: i == root.index ? 0px : 3px;
+                height: i == root.index ? 10px : 5px;
+                border-radius: self.height / 2;
+                background: f
+                    ? (i == root.index ? Theme.forecast : (i < root.index ? #B79CFF88 : #B79CFF33))
+                    : (i == root.index ? Theme.accent : (i < root.index ? #5CC6E688 : #FFFFFF2A));
+            }
+        }
+    }
+    HorizontalLayout {
+        spacing: 3px;
+        height: 20px;
+        alignment: start;
+        for t[i] in root.ticks: Rectangle {
+            width: root.cell;
+            // Labels are sparse, so they may be wider than one cell.
+            Text {
+                width: 90px;
+                x: (parent.width - self.width) / 2;
+                text: t;
+                font-size: 15px;
+                font-weight: i == root.now-index ? 600 : 400;
+                color: i == root.now-index ? Theme.text-primary : Theme.text-tertiary;
+                horizontal-alignment: center;
+            }
+        }
+    }
+}
+
+export component RadarScreen inherits Rectangle {
+    in property <HeaderData> header;
+    in property <ClockData> clock;
+    in property <WeatherView> weather;
+    in property <RadarView> radar;
+    in property <[image]> frames;
+    in property <int> frame-ms: 700;
+
+    // Frame animation lives here so it only runs while this screen exists.
+    property <int> index: 0;
+    property <int> hold: 0;
+    property <int> count: frames.length;
+    property <int> shown: count == 0 ? 0 : min(index, count - 1);
+
+    property <bool> animate: root.count > 1 && root.frame-ms > 0;
+    property <bool> is-forecast: root.count > 0 && root.radar.frame-forecast[root.shown];
+
+    // Play past → now → forecast from the start whenever new frames arrive;
+    // without animation stay on the latest observation.
+    changed count => {
+        root.index = root.animate ? 0 : root.radar.now-index;
+        root.hold = 0;
+    }
+    init => {
+        root.index = root.animate ? 0 : root.radar.now-index;
+    }
+
+    Timer {
+        interval: root.frame-ms * 1ms;
+        running: root.animate;
+        triggered => {
+            if (root.index == root.radar.now-index && root.hold < 2) {
+                // pause briefly on "now"
+                root.hold += 1;
+            } else if (root.index >= root.count - 1) {
+                // and a little longer on the last frame before looping
+                if (root.hold < 3) {
+                    root.hold += 1;
+                } else {
+                    root.hold = 0;
+                    root.index = 0;
+                }
+            } else {
+                root.hold = 0;
+                root.index += 1;
+            }
+        }
+    }
+
+    HorizontalLayout {
+        padding: 34px;
+        padding-left: 40px;
+        spacing: Theme.gap;
+
+        // ── Map ──
+        map := Rectangle {
+            horizontal-stretch: 1;
+            border-radius: Theme.radius;
+            background: Theme.surface-sunken;
+            border-width: 1px;
+            border-color: Theme.hairline;
+            clip: true;
+
+            if root.count > 0: Image {
+                width: 100%;
+                height: 100%;
+                source: root.frames[root.shown];
+                image-fit: cover;
+                image-rendering: smooth;
+            }
+
+            if root.count > 0 && !root.radar.sample: LocationMarker {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+            }
+
+            if root.radar.sample: Rectangle {
+                // Large, unmistakable marker: the fixture image is synthetic.
+                Text {
+                    text: "SAMPLE";
+                    font-size: 220px;
+                    font-weight: 800;
+                    letter-spacing: 30px;
+                    color: #FFFFFF10;
+                }
+                VerticalLayout {
+                    alignment: end;
+                    padding: 30px;
+                    padding-bottom: 110px;
+                    HorizontalLayout {
+                        alignment: center;
+                        Pill {
+                            text: "サンプル画像 — 実際の観測データではありません";
+                            tone: Theme.warn;
+                            fill: #000000AA;
+                            outlined: true;
+                            font-size: 22px;
+                            font-weight: 600;
+                        }
+                    }
+                }
+            }
+
+            if root.radar.state != PanelState.ready: Rectangle {
+                background: root.count > 0 ? #090D12C0 : transparent;
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 22px;
+                    Placeholder {
+                        title: root.radar.message;
+                        detail: root.radar.detail;
+                        title-size: 34px;
+                        tone: root.radar.state == PanelState.error ? Theme.warn : Theme.text-secondary;
+                    }
+                    // Download progress, refreshed once per second.
+                    if root.radar.progress >= 0: HorizontalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 520px;
+                            height: 10px;
+                            border-radius: 5px;
+                            background: #FFFFFF1A;
+                            Rectangle {
+                                x: 0;
+                                width: parent.width * clamp(root.radar.progress, 0, 1);
+                                height: parent.height;
+                                border-radius: 5px;
+                                background: Theme.accent;
+                                animate width { duration: Theme.effects ? 800ms : 0ms; }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Top-left: title + frame time.
+            VerticalLayout {
+                padding: 26px;
+                alignment: start;
+                HorizontalLayout {
+                    alignment: start;
+                    Rectangle {
+                        background: #090D12D0;
+                        border-radius: 14px;
+                        HorizontalLayout {
+                            padding-left: 20px;
+                            padding-right: 22px;
+                            padding-top: 12px;
+                            padding-bottom: 12px;
+                            spacing: 16px;
+                            Text { text: "雨雲レーダー"; font-size: 26px; font-weight: 600; color: Theme.text-primary; vertical-alignment: center; }
+                            if root.radar.location != "": Text { text: root.radar.location; font-size: 22px; color: Theme.text-secondary; vertical-alignment: center; }
+                            if root.is-forecast: VerticalLayout {
+                                alignment: center;
+                                Pill {
+                                    text: "予測";
+                                    tone: Theme.forecast;
+                                    fill: Theme.forecast-soft;
+                                    outlined: true;
+                                    font-size: 18px;
+                                    font-weight: 700;
+                                }
+                            }
+                            if root.count > 0: Text {
+                                text: root.radar.frame-times[root.shown];
+                                font-size: 26px;
+                                font-weight: 600;
+                                color: root.is-forecast ? Theme.forecast : Theme.accent;
+                                vertical-alignment: center;
+                            }
+                            if root.count > 0: Text {
+                                // "-30分" / "現在 · 3分前" / "+40分"
+                                text: root.shown == root.radar.now-index
+                                    ? "観測 · " + root.radar.age-text
+                                    : root.radar.frame-offsets[root.shown];
+                                font-size: 20px;
+                                color: root.is-forecast ? Theme.forecast : Theme.text-tertiary;
+                                vertical-alignment: center;
+                            }
+                            if root.radar.stale: StaleBadge { text: "更新停止中"; }
+                        }
+                    }
+                }
+                if root.radar.source-note != "": HorizontalLayout {
+                    alignment: start;
+                    padding-top: 10px;
+                    StaleBadge { text: root.radar.source-note; }
+                }
+            }
+
+            // Bottom: timeline + attribution.
+            VerticalLayout {
+                alignment: end;
+                padding: 22px;
+                padding-left: 26px;
+                spacing: 10px;
+                if root.radar.attribution != "": HorizontalLayout {
+                    alignment: end;
+                    Rectangle {
+                        background: #090D12B0;
+                        border-radius: 8px;
+                        HorizontalLayout {
+                            padding: 8px;
+                            padding-left: 12px;
+                            padding-right: 12px;
+                            Text { text: root.radar.attribution; font-size: 15px; color: Theme.text-tertiary; }
+                        }
+                    }
+                }
+                if root.count > 1: HorizontalLayout {
+                    alignment: start;
+                    Rectangle {
+                        background: #090D12C8;
+                        border-radius: 12px;
+                        HorizontalLayout {
+                            padding: 12px;
+                            padding-left: 18px;
+                            padding-right: 18px;
+                            Timeline {
+                                forecast: root.radar.frame-forecast;
+                                ticks: root.radar.tick-labels;
+                                index: root.shown;
+                                now-index: root.radar.now-index;
+                                // map width = screen − side panel (440) − paddings/gap; avoids a layout loop
+                                cell: min(72px, (root.width - 440px - 74px - Theme.gap - 120px) / max(1, root.count) - 3px);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Side panel ──
+        VerticalLayout {
+            width: 440px;
+            spacing: Theme.gap;
+
+            Card {
+                VerticalLayout {
+                    padding: 30px;
+                    spacing: 2px;
+                    Text {
+                        text: root.header.date + " " + root.header.weekday;
+                        font-size: 28px;
+                        font-weight: 500;
+                        color: root.header.red-day ? Theme.holiday : Theme.text-secondary;
+                    }
+                    if root.header.holiday != "": Text { text: root.header.holiday; font-size: 20px; color: Theme.holiday; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text {
+                            text: root.clock.time;
+                            font-size: root.clock.seconds != "" ? 112px : 132px;
+                            font-weight: 300;
+                            letter-spacing: -3px;
+                            color: Theme.text-primary;
+                            vertical-alignment: center;
+                        }
+                        if root.clock.seconds != "": Text {
+                            width: 70px;
+                            text: root.clock.seconds;
+                            font-size: 48px;
+                            font-weight: 300;
+                            color: Theme.text-tertiary;
+                            vertical-alignment: bottom;
+                            y: -22px;
+                        }
+                        Rectangle { horizontal-stretch: 1; }
+                    }
+                }
+            }
+
+            Card {
+                vertical-stretch: 1;
+                VerticalLayout {
+                    padding: 30px;
+                    spacing: 18px;
+                    SectionTitle { text: root.weather.location != "" ? "現在の天気 · " + root.weather.location : "現在の天気"; }
+                    if root.weather.state == PanelState.ready: HorizontalLayout {
+                        spacing: 20px;
+                        WeatherIcon { kind: root.weather.kind; is-day: root.weather.is-day; size: 88px; }
+                        VerticalLayout {
+                            alignment: center;
+                            Text { text: root.weather.temp; font-size: 64px; font-weight: 300; color: Theme.text-primary; }
+                            Text { text: root.weather.condition; font-size: 24px; color: Theme.text-secondary; }
+                        }
+                    }
+                    if root.weather.state == PanelState.ready: HorizontalLayout {
+                        spacing: 22px;
+                        Text { text: "降水確率 " + root.weather.pop; font-size: 21px; color: Theme.rain; }
+                        Text { text: root.weather.high + " / " + root.weather.low; font-size: 21px; color: Theme.text-secondary; }
+                    }
+                    if root.weather.state != PanelState.ready: Text {
+                        text: root.weather.message;
+                        font-size: 22px;
+                        color: Theme.text-tertiary;
+                        wrap: word-wrap;
+                    }
+                    Rectangle { vertical-stretch: 1; }
+                    if root.radar.source-note == "": Legend { }
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 10px;
+                height: 28px;
+                VerticalLayout {
+                    alignment: center;
+                    StatusDot { health: root.header.status-health; }
+                }
+                Text { text: root.header.status-text; font-size: 18px; color: Theme.text-tertiary; vertical-alignment: center; }
+                Rectangle { horizontal-stretch: 1; }
+                if root.header.sample: Text { text: "サンプルデータ"; font-size: 18px; color: Theme.warn; vertical-alignment: center; }
+            }
+        }
+    }
+}

@@ -1,0 +1,19 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//home-display//fixture//JA
+X-WR-CALNAME:サンプルカレンダー (fixture)
+X-WR-TIMEZONE:Asia/Tokyo
+BEGIN:VEVENT
+UID:hair@fixture.home-display
+SUMMARY:美容院
+DTSTART;TZID=Asia/Tokyo:{{D+1}}T100000
+DTEND;TZID=Asia/Tokyo:{{D+1}}T110000
+LOCATION:Salon Ao
+END:VEVENT
+BEGIN:VEVENT
+UID:call@fixture.home-display
+SUMMARY:実家に電話
+DTSTART;TZID=Asia/Tokyo:{{D+1}}T193000
+DTEND;TZID=Asia/Tokyo:{{D+1}}T200000
+END:VEVENT
+END:VCALENDAR

@@ -1,0 +1,12 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = "purge" ]; then
+    rm -rf /var/cache/home-display /var/lib/home-display
+    rm -f /etc/home-display/home-display.env
+    if getent passwd home-display >/dev/null; then
+        deluser --system home-display >/dev/null 2>&1 || true
+    fi
+fi
+
+#DEBHELPER#

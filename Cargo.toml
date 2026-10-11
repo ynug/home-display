@@ -1,0 +1,79 @@
+[package]
+name = "home-display"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+description = "Always-on home information display (clock, calendar, weather, earthquakes, rain radar) built with Rust and Slint"
+license = "MIT"
+readme = "README.md"
+publish = false
+default-run = "home-display"
+
+[features]
+# macOS / Linux desktop development: a normal window via winit.
+default = ["desktop"]
+desktop = ["slint/backend-winit", "slint/renderer-femtovg", "slint/renderer-software"]
+# Linux production: full-screen on DRM/KMS without X11/Wayland.
+# `noseat` opens /dev/dri and /dev/input directly (user needs the `video` and
+# `input` groups). Renderer is selected at runtime with SLINT_BACKEND
+# (linuxkms-femtovg = OpenGL ES via GBM/EGL, linuxkms-software = CPU only).
+kms = ["slint/backend-linuxkms-noseat", "slint/renderer-femtovg", "slint/renderer-software"]
+# Optional: acquire devices through libseat (seatd / logind) instead.
+kms-libseat = ["kms", "slint/backend-linuxkms-libseat"]
+
+[dependencies]
+slint = { version = "=1.18.1", default-features = false, features = ["std", "compat-1-18"] }
+tokio = { version = "1.53", features = ["rt-multi-thread", "time", "sync", "macros"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "http2", "gzip"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "1.1"
+chrono = { version = "0.4.45", default-features = false, features = ["std", "clock", "serde"] }
+chrono-tz = "0.10.4"
+icalendar = { version = "0.17.14", default-features = false, features = ["parser", "recurrence"] }
+image = { version = "0.25.10", default-features = false, features = ["png"] }
+encoding_rs = "0.8.42"
+roxmltree = "0.21.1"
+thiserror = "2.0"
+anyhow = "1.0"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "env-filter", "std", "ansi"] }
+
+[build-dependencies]
+slint-build = "=1.18.1"
+
+[dev-dependencies]
+i-slint-backend-testing = "=1.18.1"
+tokio = { version = "1.53", features = ["test-util", "macros", "rt"] }
+chrono-tz = "0.10.4"
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+strip = "debuginfo"
+panic = "unwind"
+
+[package.metadata.deb]
+maintainer = "Home Display maintainers <noreply@example.invalid>"
+copyright = "Home Display contributors"
+section = "misc"
+priority = "optional"
+extended-description = """\
+Always-on home information display rendered directly on DRM/KMS with Slint.
+Shows the clock, Japanese holidays, an iCal calendar (today and tomorrow),
+weather (Open-Meteo), earthquake information (JMA XML, P2PQuake fallback) and
+a rain radar (JMA nowcast with 1-hour forecast, RainViewer fallback)."""
+# $auto resolves shared-library dependencies via dpkg-shlibdeps.
+depends = "$auto, fonts-noto-cjk, ca-certificates, adduser"
+recommends = "libgl1-mesa-dri"
+maintainer-scripts = "packaging/debian/"
+conf-files = ["/etc/home-display/config.toml"]
+assets = [
+    ["target/release/home-display", "usr/bin/", "755"],
+    ["packaging/config/config.toml", "etc/home-display/config.toml", "644"],
+    ["packaging/config/home-display.env", "usr/share/home-display/home-display.env.example", "644"],
+    ["README.md", "usr/share/doc/home-display/README.md", "644"],
+    ["docs/linux-kms.md", "usr/share/doc/home-display/linux-kms.md", "644"],
+    ["docs/raspberry-pi.md", "usr/share/doc/home-display/raspberry-pi.md", "644"],
+]
+systemd-units = { unit-name = "home-display", unit-scripts = "packaging/systemd", enable = true, start = false }

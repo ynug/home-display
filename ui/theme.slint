@@ -1,0 +1,69 @@
+import { Health } from "types.slint";
+
+// Design tokens. Dark, low-glare palette tuned for a living-room display seen
+// from a few metres away: deep navy-charcoal background, cards only slightly
+// lighter, one restrained cyan accent, warm colours reserved for warnings.
+export global Theme {
+    // Gradients and shadows are disabled by the Low profile.
+    in-out property <bool> effects: true;
+
+    out property <brush> background: effects ? @linear-gradient(165deg, #0D131A 0%, #090D12 55%, #070A0E 100%) : #090D12;
+    out property <color> surface: #111921;
+    out property <color> surface-raised: #17212B;
+    out property <color> surface-sunken: #0C1218;
+    out property <color> hairline: #1F2A36;
+    out property <color> divider: #1A242F;
+
+    out property <color> text-primary: #F1F4F7;
+    out property <color> text-secondary: #A2AEBB;
+    out property <color> text-tertiary: #6A7684;
+    out property <color> text-faint: #46515D;
+
+    out property <color> accent: #5CC6E6;
+    out property <color> accent-soft: #5CC6E61C;
+    out property <color> rain: #5BA3F2;
+    // Radar forecast frames (never mistaken for observations).
+    out property <color> forecast: #B79CFF;
+    out property <color> forecast-soft: #B79CFF26;
+    out property <color> sun: #FFC75E;
+    out property <color> cold: #7FB6FF;
+    out property <color> hot: #FF9A6B;
+    out property <color> warn: #FFB547;
+    out property <color> warn-soft: #FFB5471A;
+    out property <color> danger: #FF6B4F;
+    out property <color> danger-soft: #FF6B4F1F;
+    out property <color> ok: #48D49C;
+    out property <color> holiday: #FF8E7F;
+
+    out property <length> radius: 22px;
+    out property <length> radius-small: 12px;
+    out property <length> pad: 32px;
+    out property <length> gap: 26px;
+
+    public pure function health-color(h: Health) -> color {
+        if (h == Health.ok) { return ok; }
+        if (h == Health.sample) { return accent; }
+        if (h == Health.retrying || h == Health.stale) { return warn; }
+        if (h == Health.error) { return danger; }
+        if (h == Health.loading) { return text-tertiary; }
+        return text-faint;
+    }
+
+    // JMA seismic-intensity colours, muted for a dark background.
+    public pure function shindo-color(level: int) -> color {
+        if (level <= 0) { return #3A4654; }
+        if (level == 1) { return #4E5D6E; }
+        if (level == 2) { return #3471AE; }
+        if (level == 3) { return #24907F; }
+        if (level == 4) { return #D4A01E; }
+        if (level == 5) { return #EC8A2C; }
+        if (level == 6) { return #E5632B; }
+        if (level == 7) { return #DB4136; }
+        if (level == 8) { return #C02E47; }
+        return #951E5E;
+    }
+
+    public pure function shindo-text-color(level: int) -> color {
+        return level == 4 || level == 5 ? #1A1206 : #FFFFFF;
+    }
+}

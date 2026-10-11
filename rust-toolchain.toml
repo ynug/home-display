@@ -1,0 +1,7 @@
+# Rust toolchain used by CI (rustup reads this file). Keep in sync with
+# mise.toml [tools] rust, which pins the same version for local development.
+# To upgrade: change both, run `mise run check`, commit.
+[toolchain]
+channel = "1.98.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

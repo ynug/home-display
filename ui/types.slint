@@ -1,0 +1,209 @@
+// Display-only data types. Rust (src/ui_bridge.rs) fills these from the
+// normalized view model in src/view.rs; the UI never talks to services.
+
+export enum ScreenKind { overview, radar, settings }
+
+export enum WeatherKind {
+    clear,
+    partly-cloudy,
+    cloudy,
+    fog,
+    drizzle,
+    rain,
+    heavy-rain,
+    snow,
+    thunder,
+    unknown,
+}
+
+// Health of one data source, as shown by status dots and chips.
+export enum Health { ok, retrying, stale, error, loading, unconfigured, disabled, sample }
+
+// What a panel can show instead of (or in addition to) its data.
+export enum PanelState { ready, empty, loading, error, unconfigured, disabled }
+
+export struct HeaderData {
+    date: string,
+    weekday: string,
+    year: string,
+    holiday: string,
+    red-day: bool,
+    status-text: string,
+    status-health: Health,
+    updated: string,
+    sample: bool,
+}
+
+export struct ClockData {
+    time: string,
+    // "" when seconds are disabled (display.show_seconds = false)
+    seconds: string,
+    subline: string,
+}
+
+export struct EventRow {
+    start: string,
+    end: string,
+    title: string,
+    location: string,
+    all-day: bool,
+    ongoing: bool,
+    relative: string,
+}
+
+export struct CalendarView {
+    state: PanelState,
+    message: string,
+    detail: string,
+    count-text: string,
+    has-next: bool,
+    next-label: string,
+    next: EventRow,
+    all-day: [EventRow],
+    rows: [EventRow],
+    more-text: string,
+    finished-text: string,
+    tomorrow-label: string,
+    tomorrow: [EventRow],
+    stale: bool,
+    stale-text: string,
+}
+
+export struct HourCell {
+    label: string,
+    kind: WeatherKind,
+    is-day: bool,
+    temp: string,
+    pop: string,
+    pop-high: bool,
+}
+
+export struct DayCell {
+    label: string,
+    kind: WeatherKind,
+    high: string,
+    low: string,
+    pop: string,
+}
+
+export struct WeatherView {
+    state: PanelState,
+    message: string,
+    detail: string,
+    location: string,
+    kind: WeatherKind,
+    is-day: bool,
+    temp: string,
+    condition: string,
+    feels: string,
+    humidity: string,
+    pop: string,
+    high: string,
+    low: string,
+    sun-text: string,
+    as-of: string,
+    hours: [HourCell],
+    days: [DayCell],
+    stale: bool,
+    stale-text: string,
+    dim: bool,
+    attribution: string,
+}
+
+export struct QuakeRow {
+    time: string,
+    place: string,
+    magnitude: string,
+    shindo: string,
+    level: int,
+}
+
+export struct QuakeView {
+    state: PanelState,
+    message: string,
+    detail: string,
+    has-latest: bool,
+    shindo: string,
+    // 0 = unknown, 1..9 = 震度1 … 震度7 (used for the badge colour)
+    level: int,
+    place: string,
+    occurred: string,
+    relative: string,
+    magnitude: string,
+    depth: string,
+    tsunami: string,
+    tsunami-alert: bool,
+    // 0 = normal, 1 = notice (amber), 2 = warning (red)
+    emphasis: int,
+    history: [QuakeRow],
+    updated: string,
+    stale: bool,
+    stale-text: string,
+    source: string,
+}
+
+export struct SourceChip {
+    name: string,
+    health: Health,
+    time: string,
+}
+
+export struct FooterView {
+    sources: [SourceChip],
+    right-text: string,
+}
+
+export struct RadarView {
+    state: PanelState,
+    message: string,
+    detail: string,
+    frame-times: [string],
+    frame-forecast: [bool],
+    frame-offsets: [string],
+    tick-labels: [string],
+    now-index: int,
+    source-note: string,
+    // 0..1 while the first download runs, -1 otherwise
+    progress: float,
+    latest-label: string,
+    age-text: string,
+    sample: bool,
+    stale: bool,
+    attribution: string,
+    location: string,
+    decoding: bool,
+}
+
+export struct DiagRow {
+    name: string,
+    health: Health,
+    origin: string,
+    last-success: string,
+    next: string,
+    error: string,
+}
+
+export struct SettingsView {
+    profile-index: int,
+    profile-name: string,
+    profile-detail: string,
+    rotation-enabled: bool,
+    rotation-paused: bool,
+    overview-seconds: int,
+    // 0 = automatic (radar-auto-seconds is the current automatic value)
+    radar-seconds: int,
+    radar-auto-seconds: int,
+    radar-zoom: int,
+    radar-zoom-text: string,
+    mode-text: string,
+    config-path: string,
+    overrides-path: string,
+    cache-dir: string,
+    version: string,
+    radar-memory: string,
+    save-message: string,
+    // calendar (iCal) status, e.g. "設定済み（URL は非表示）"
+    ical-text: string,
+    sources: [DiagRow],
+    logs: [string],
+}

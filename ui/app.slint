@@ -1,0 +1,127 @@
+import { Theme } from "theme.slint";
+import { OverviewScreen } from "overview.slint";
+import { RadarScreen } from "radar.slint";
+import { SettingsScreen } from "settings.slint";
+import {
+    ScreenKind, HeaderData, ClockData, CalendarView, WeatherView, QuakeView,
+    FooterView, RadarView, SettingsView, Health, PanelState,
+} from "types.slint";
+
+export { Theme }
+export * from "types.slint";
+
+export component MainWindow inherits Window {
+    title: "Home Display";
+    preferred-width: 1920px;
+    preferred-height: 1080px;
+    // Desktop preview: the layout is designed for exactly 1920×1080 logical
+    // px, so the window is fixed (min = max ⇒ not resizable). On LinuxKMS
+    // the output size is used as-is.
+    in property <bool> fixed-size: false;
+    min-width: fixed-size ? 1920px : 960px;
+    min-height: fixed-size ? 1080px : 540px;
+    max-width: fixed-size ? 1920px : 100000px;
+    max-height: fixed-size ? 1080px : 100000px;
+    background: #090D12;
+    default-font-family: root.font-family;
+
+    in property <string> font-family;
+    in property <ScreenKind> screen: ScreenKind.overview;
+
+    in property <HeaderData> header;
+    in property <ClockData> clock;
+    in property <CalendarView> calendar;
+    in property <WeatherView> weather;
+    in property <QuakeView> quake;
+    in property <FooterView> footer;
+    in property <RadarView> radar;
+    in property <[image]> radar-frames;
+    in property <int> radar-frame-ms: 700;
+    in property <SettingsView> settings;
+    // Location form on the settings screen.
+    in-out property <string> edit-location-name;
+    in-out property <string> edit-location-coords;
+    in-out property <string> edit-radar-coords;
+    in-out property <string> edit-radar-name;
+
+    // Every user input (keys, buttons, hot corner) funnels into one callback so
+    // that Rust's ScreenManager remains the single owner of navigation state.
+    callback action(string);
+
+    Rectangle {
+        background: Theme.background;
+    }
+
+    if root.screen == ScreenKind.overview: OverviewScreen {
+        header: root.header;
+        clock: root.clock;
+        calendar: root.calendar;
+        weather: root.weather;
+        quake: root.quake;
+        footer: root.footer;
+    }
+
+    if root.screen == ScreenKind.radar: RadarScreen {
+        header: root.header;
+        clock: root.clock;
+        weather: root.weather;
+        radar: root.radar;
+        frames: root.radar-frames;
+        frame-ms: root.radar-frame-ms;
+    }
+
+    if root.screen == ScreenKind.settings: SettingsScreen {
+        data: root.settings;
+        location-name <=> root.edit-location-name;
+        location-coords <=> root.edit-location-coords;
+        radar-coords <=> root.edit-radar-coords;
+        radar-name <=> root.edit-radar-name;
+        action(a) => { root.action(a); }
+    }
+
+    // Keyboard input. Also used for the settings screen on devices with a keyboard.
+    keys := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape) { root.action("key:escape"); return accept; }
+            if (event.text == Key.F2) { root.action("key:s"); return accept; }
+            if (event.text == Key.F5) { root.action("key:u"); return accept; }
+            if (event.text == Key.RightArrow) { root.action("key:next"); return accept; }
+            if (event.text == Key.LeftArrow) { root.action("key:prev"); return accept; }
+            if (event.text == " ") { root.action("key:space"); return accept; }
+            root.action("key:" + event.text.to-lowercase());
+            accept
+        }
+    }
+
+    // Touch / mouse: a long press in the top-right corner opens settings,
+    // a tap elsewhere on Overview/Radar advances to the next screen.
+    if root.screen != ScreenKind.settings: TouchArea {
+        clicked => { root.action("tap"); }
+    }
+    if root.screen != ScreenKind.settings: TouchArea {
+        x: parent.width - 160px;
+        y: 0px;
+        width: 160px;
+        height: 140px;
+        property <bool> armed: false;
+        pointer-event(ev) => {
+            if (ev.kind == PointerEventKind.down) {
+                hold.running = true;
+            } else if (ev.kind == PointerEventKind.up || ev.kind == PointerEventKind.cancel) {
+                hold.running = false;
+            }
+        }
+        hold := Timer {
+            interval: 1200ms;
+            running: false;
+            triggered => {
+                self.running = false;
+                root.action("open-settings");
+            }
+        }
+    }
+
+    init => { keys.focus(); }
+    // Text fields take the keyboard focus; give it back when leaving settings.
+    changed screen => { keys.focus(); }
+}

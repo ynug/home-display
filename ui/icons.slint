@@ -1,0 +1,133 @@
+import { Theme } from "theme.slint";
+import { WeatherKind } from "types.slint";
+
+// Line-style weather icons drawn with Slint paths on a 24×24 grid.
+// All geometry is original to this project (no third-party icon set).
+component Glyph inherits Path {
+    in property <length> sw;
+    width: 100%;
+    height: 100%;
+    viewbox-width: 24;
+    viewbox-height: 24;
+    stroke-width: sw;
+    stroke-line-cap: round;
+    stroke-line-join: round;
+}
+
+export component WeatherIcon inherits Rectangle {
+    in property <WeatherKind> kind: WeatherKind.clear;
+    in property <bool> is-day: true;
+    in property <length> size: 64px;
+    // Colour behind the icon; used to "cut out" the cloud in partly-cloudy.
+    in property <color> backdrop: Theme.surface;
+    width: size;
+    height: size;
+
+    property <length> sw: max(1.4px, size * 0.068);
+    property <color> cloud-color: #C9D3DD;
+    property <bool> precip: kind == WeatherKind.drizzle || kind == WeatherKind.rain || kind == WeatherKind.heavy-rain || kind == WeatherKind.snow || kind == WeatherKind.thunder;
+
+    // ---- clear ----
+    if root.kind == WeatherKind.clear && root.is-day: Glyph {
+        sw: root.sw;
+        stroke: Theme.sun;
+        commands: "M 16 12 A 4 4 0 1 1 8 12 A 4 4 0 1 1 16 12 Z M 12 2.5 L 12 4.5 M 12 19.5 L 12 21.5 M 2.5 12 L 4.5 12 M 19.5 12 L 21.5 12 M 5.3 5.3 L 6.7 6.7 M 17.3 17.3 L 18.7 18.7 M 5.3 18.7 L 6.7 17.3 M 17.3 6.7 L 18.7 5.3";
+    }
+    if root.kind == WeatherKind.clear && !root.is-day: Glyph {
+        sw: root.sw;
+        stroke: #E7E2C8;
+        commands: "M 19.5 14.6 A 8 8 0 1 1 9.4 4.5 A 6.3 6.3 0 0 0 19.5 14.6 Z";
+    }
+
+    // ---- partly cloudy: small sun/moon behind a cloud ----
+    if root.kind == WeatherKind.partly-cloudy && root.is-day: Glyph {
+        sw: root.sw;
+        stroke: Theme.sun;
+        commands: "M 19.6 8 A 3.1 3.1 0 1 1 13.4 8 A 3.1 3.1 0 1 1 19.6 8 Z M 16.5 2.2 L 16.5 3.3 M 22.3 8 L 21.2 8 M 20.6 3.9 L 19.8 4.7 M 12.4 3.9 L 13.2 4.7 M 20.6 12.1 L 19.8 11.3";
+    }
+    if root.kind == WeatherKind.partly-cloudy && !root.is-day: Glyph {
+        sw: root.sw;
+        stroke: #E7E2C8;
+        commands: "M 21.8 10.2 A 4.8 4.8 0 1 1 15.8 3.4 A 3.8 3.8 0 0 0 21.8 10.2 Z";
+    }
+    if root.kind == WeatherKind.partly-cloudy: Glyph {
+        sw: root.sw;
+        stroke: root.cloud-color;
+        fill: root.backdrop;
+        commands: "M 6 20.5 A 3.9 3.9 0 0 1 5.4 12.75 A 5.1 5.1 0 0 1 14.9 12.1 A 4.2 4.2 0 0 1 14.6 20.5 Z";
+    }
+
+    // ---- overcast ----
+    if root.kind == WeatherKind.cloudy: Glyph {
+        sw: root.sw;
+        stroke: root.cloud-color;
+        commands: "M 7 19 A 4.5 4.5 0 0 1 6.4 10.05 A 6 6 0 0 1 17.6 9.2 A 4.9 4.9 0 0 1 17.2 19 Z";
+    }
+
+    // ---- fog ----
+    if root.kind == WeatherKind.fog: Glyph {
+        sw: root.sw;
+        stroke: root.cloud-color;
+        commands: "M 6 7 A 3.5 3.5 0 0 1 12 5.2 A 3.2 3.2 0 0 1 18 7 M 3.5 11.5 L 20.5 11.5 M 5 15.5 L 19 15.5 M 7.5 19.5 L 16.5 19.5";
+    }
+
+    // ---- precipitation: raised cloud + marks ----
+    if root.precip: Glyph {
+        sw: root.sw;
+        stroke: root.cloud-color;
+        commands: "M 7 15.5 A 4.5 4.5 0 0 1 6.4 6.55 A 6 6 0 0 1 17.6 5.7 A 4.9 4.9 0 0 1 17.2 15.5 Z";
+    }
+    if root.kind == WeatherKind.drizzle: Glyph {
+        sw: root.sw;
+        stroke: Theme.rain;
+        commands: "M 8.6 18.6 L 8.2 19.8 M 12.6 18.6 L 12.2 19.8 M 16.6 18.6 L 16.2 19.8";
+    }
+    if root.kind == WeatherKind.rain: Glyph {
+        sw: root.sw;
+        stroke: Theme.rain;
+        commands: "M 8.8 18.2 L 7.8 21.4 M 12.8 18.2 L 11.8 21.4 M 16.8 18.2 L 15.8 21.4";
+    }
+    if root.kind == WeatherKind.heavy-rain: Glyph {
+        sw: root.sw;
+        stroke: Theme.rain;
+        commands: "M 7.6 18 L 6.5 22 M 10.6 18 L 9.5 22 M 13.6 18 L 12.5 22 M 16.6 18 L 15.5 22";
+    }
+    if root.kind == WeatherKind.snow: Glyph {
+        sw: root.sw;
+        stroke: #E6F0FA;
+        commands: "M 8 18.2 L 8 20.6 M 6.8 19.4 L 9.2 19.4 M 12 19.4 L 12 21.8 M 10.8 20.6 L 13.2 20.6 M 16 18.2 L 16 20.6 M 14.8 19.4 L 17.2 19.4";
+    }
+    if root.kind == WeatherKind.thunder: Glyph {
+        sw: root.sw;
+        stroke: Theme.warn;
+        commands: "M 13 16.5 L 10.5 19.6 L 13.5 19.6 L 11.2 22.8";
+    }
+
+    if root.kind == WeatherKind.unknown: Glyph {
+        sw: root.sw;
+        stroke: Theme.text-tertiary;
+        commands: "M 7 12 L 17 12";
+    }
+}
+
+// Small location marker used on the radar map.
+export component LocationMarker inherits Rectangle {
+    width: 34px;
+    height: 34px;
+    Rectangle {
+        width: 34px;
+        height: 34px;
+        border-radius: 17px;
+        border-width: 2px;
+        border-color: #FFFFFFB0;
+        background: #5CC6E62E;
+    }
+    Rectangle {
+        width: 12px;
+        height: 12px;
+        border-radius: 6px;
+        background: Theme.accent;
+        border-width: 2px;
+        border-color: #FFFFFF;
+    }
+}

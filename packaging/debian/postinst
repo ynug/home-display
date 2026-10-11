@@ -1,0 +1,22 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = "configure" ]; then
+    if ! getent passwd home-display >/dev/null; then
+        adduser --system --group --no-create-home --home /var/lib/home-display \
+            --gecos "Home Display" home-display
+    fi
+    # DRM/KMS output and libinput need these groups (no root required).
+    for g in video render input; do
+        if getent group "$g" >/dev/null; then
+            adduser home-display "$g" >/dev/null 2>&1 || true
+        fi
+    done
+    # Secrets file: created once, readable by root only (systemd reads it).
+    if [ ! -e /etc/home-display/home-display.env ]; then
+        install -m 0600 -o root -g root /usr/share/home-display/home-display.env.example \
+            /etc/home-display/home-display.env
+    fi
+fi
+
+#DEBHELPER#

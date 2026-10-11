@@ -1,0 +1,136 @@
+import { Theme } from "theme.slint";
+import { Health } from "types.slint";
+
+export component Card inherits Rectangle {
+    in property <color> outline: Theme.hairline;
+    in property <brush> fill: Theme.surface;
+    background: fill;
+    border-radius: Theme.radius;
+    border-width: 1px;
+    border-color: outline;
+    drop-shadow-blur: Theme.effects ? 28px : 0px;
+    drop-shadow-offset-y: Theme.effects ? 10px : 0px;
+    drop-shadow-color: Theme.effects ? #00000066 : transparent;
+}
+
+export component StatusDot inherits Rectangle {
+    in property <Health> health: Health.ok;
+    in property <length> size: 10px;
+    width: size;
+    height: size;
+    border-radius: size / 2;
+    background: Theme.health-color(health);
+}
+
+export component Pill inherits Rectangle {
+    in property <string> text;
+    in property <color> tone: Theme.text-secondary;
+    in property <color> fill: transparent;
+    in property <bool> outlined: false;
+    in property <length> font-size: 18px;
+    in property <int> font-weight: 500;
+    height: font-size * 1.85;
+    border-radius: self.height / 2;
+    background: fill;
+    border-width: outlined ? 1.5px : 0px;
+    border-color: tone;
+    HorizontalLayout {
+        padding-left: root.font-size * 0.75;
+        padding-right: root.font-size * 0.75;
+        Text {
+            text: root.text;
+            color: root.tone;
+            font-size: root.font-size;
+            font-weight: root.font-weight;
+            vertical-alignment: center;
+        }
+    }
+}
+
+export component SectionTitle inherits HorizontalLayout {
+    in property <string> text;
+    in property <string> trailing;
+    in property <color> trailing-color: Theme.text-tertiary;
+    spacing: 12px;
+    height: 30px;
+    Text {
+        text: root.text;
+        font-size: 21px;
+        font-weight: 600;
+        letter-spacing: 1.5px;
+        color: Theme.text-secondary;
+        vertical-alignment: center;
+    }
+    Rectangle { horizontal-stretch: 1; }
+    if root.trailing != "": Text {
+        text: root.trailing;
+        font-size: 18px;
+        color: root.trailing-color;
+        vertical-alignment: center;
+    }
+}
+
+// Small amber marker shown when a panel is displaying an older copy of its data.
+export component StaleBadge inherits Pill {
+    tone: Theme.warn;
+    fill: Theme.warn-soft;
+    font-size: 16px;
+}
+
+// Centered placeholder used for empty / error / unconfigured / loading states.
+export component Placeholder inherits VerticalLayout {
+    in property <string> title;
+    in property <string> detail;
+    in property <color> tone: Theme.text-secondary;
+    in property <length> title-size: 28px;
+    alignment: center;
+    spacing: 10px;
+    Text {
+        text: root.title;
+        font-size: root.title-size;
+        font-weight: 500;
+        color: root.tone;
+        horizontal-alignment: center;
+        wrap: word-wrap;
+    }
+    if root.detail != "": Text {
+        text: root.detail;
+        font-size: 19px;
+        color: Theme.text-tertiary;
+        horizontal-alignment: center;
+        wrap: word-wrap;
+    }
+}
+
+export component Divider inherits Rectangle {
+    height: 1px;
+    background: Theme.divider;
+}
+
+export component Button inherits Rectangle {
+    in property <string> text;
+    in property <bool> active: false;
+    in property <length> font-size: 20px;
+    callback clicked;
+    height: 52px;
+    min-width: 64px;
+    border-radius: Theme.radius-small;
+    background: active ? Theme.accent-soft : (touch.pressed ? Theme.surface-sunken : (touch.has-hover ? Theme.surface-raised : transparent));
+    border-width: 1px;
+    border-color: active ? Theme.accent : Theme.hairline;
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        Text {
+            text: root.text;
+            font-size: root.font-size;
+            font-weight: root.active ? 600 : 500;
+            color: root.active ? Theme.accent : Theme.text-primary;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}

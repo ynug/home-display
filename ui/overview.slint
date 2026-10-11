@@ -1,0 +1,750 @@
+import { Theme } from "theme.slint";
+import { Card, StatusDot, Pill, SectionTitle, StaleBadge, Placeholder, Divider } from "components.slint";
+import { WeatherIcon } from "icons.slint";
+import {
+    HeaderData, ClockData, CalendarView, EventRow, WeatherView, HourCell, DayCell,
+    QuakeView, QuakeRow, FooterView, SourceChip, PanelState, Health,
+} from "types.slint";
+
+// ───────────────────────────── Header ─────────────────────────────
+export component Header inherits HorizontalLayout {
+    in property <HeaderData> data;
+    height: 64px;
+    spacing: 18px;
+
+    Text {
+        text: root.data.date;
+        font-size: 44px;
+        font-weight: 600;
+        color: Theme.text-primary;
+        vertical-alignment: center;
+    }
+    Text {
+        text: root.data.weekday;
+        font-size: 44px;
+        font-weight: 400;
+        color: root.data.red-day ? Theme.holiday : Theme.text-secondary;
+        vertical-alignment: center;
+    }
+    if root.data.holiday != "": VerticalLayout {
+        alignment: center;
+        Pill {
+            text: root.data.holiday;
+            tone: Theme.holiday;
+            fill: #FF8E7F1F;
+            font-size: 22px;
+            font-weight: 600;
+        }
+    }
+    Text {
+        text: root.data.year;
+        font-size: 24px;
+        color: Theme.text-tertiary;
+        vertical-alignment: center;
+    }
+    Rectangle { horizontal-stretch: 1; }
+
+    if root.data.sample: VerticalLayout {
+        alignment: center;
+        horizontal-stretch: 0;
+        Pill {
+            text: "サンプルデータ表示中";
+            tone: Theme.warn;
+            outlined: true;
+            font-size: 18px;
+            font-weight: 600;
+        }
+    }
+    HorizontalLayout {
+        spacing: 10px;
+        horizontal-stretch: 0;
+        VerticalLayout {
+            alignment: center;
+            StatusDot { health: root.data.status-health; size: 12px; }
+        }
+        Text {
+            text: root.data.status-text;
+            font-size: 20px;
+            color: Theme.text-secondary;
+            vertical-alignment: center;
+        }
+        if root.data.updated != "": Text {
+            text: root.data.updated;
+            font-size: 20px;
+            color: Theme.text-tertiary;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// ───────────────────────────── Clock ─────────────────────────────
+component ClockBlock inherits VerticalLayout {
+    in property <ClockData> data;
+    spacing: 0px;
+    vertical-stretch: 0;
+    // Fixed box: the font's tall ascent/descent would otherwise leave a large gap.
+    HorizontalLayout {
+        height: 232px;
+        spacing: 14px;
+        Text {
+            text: root.data.time;
+            font-size: root.data.seconds != "" ? 212px : 236px;
+            font-weight: 300;
+            letter-spacing: -6px;
+            color: Theme.text-primary;
+            vertical-alignment: center;
+        }
+        // Seconds: smaller and dimmer so hours:minutes stay the focal point.
+        if root.data.seconds != "": Text {
+            width: 120px;
+            text: root.data.seconds;
+            font-size: 88px;
+            font-weight: 300;
+            color: Theme.text-tertiary;
+            vertical-alignment: bottom;
+            // align with the baseline of the large digits
+            y: -12px;
+        }
+        Rectangle { horizontal-stretch: 1; }
+    }
+    if root.data.subline != "": Text {
+        text: root.data.subline;
+        font-size: 19px;
+        color: Theme.warn;
+        horizontal-alignment: left;
+    }
+}
+
+// ───────────────────────────── Weather ─────────────────────────────
+component HourCellView inherits VerticalLayout {
+    in property <HourCell> cell;
+    alignment: center;
+    spacing: 5px;
+    horizontal-stretch: 1;
+    Text {
+        text: root.cell.label;
+        font-size: 18px;
+        color: Theme.text-tertiary;
+        horizontal-alignment: center;
+    }
+    HorizontalLayout {
+        alignment: center;
+        WeatherIcon { kind: root.cell.kind; is-day: root.cell.is-day; size: 40px; }
+    }
+    Text {
+        text: root.cell.temp;
+        font-size: 24px;
+        font-weight: 500;
+        color: Theme.text-primary;
+        horizontal-alignment: center;
+    }
+    Text {
+        text: root.cell.pop;
+        font-size: 17px;
+        color: root.cell.pop-high ? Theme.rain : Theme.text-tertiary;
+        horizontal-alignment: center;
+    }
+}
+
+component DayCellView inherits HorizontalLayout {
+    in property <DayCell> cell;
+    spacing: 14px;
+    horizontal-stretch: 1;
+    WeatherIcon { kind: root.cell.kind; size: 40px; }
+    VerticalLayout {
+        alignment: center;
+        spacing: 2px;
+        Text { text: root.cell.label; font-size: 18px; color: Theme.text-tertiary; }
+        HorizontalLayout {
+            spacing: 8px;
+            Text { text: root.cell.high; font-size: 23px; font-weight: 500; color: Theme.hot; }
+            Text { text: "/"; font-size: 23px; color: Theme.text-faint; }
+            Text { text: root.cell.low; font-size: 23px; font-weight: 500; color: Theme.cold; }
+            Text { text: root.cell.pop; font-size: 18px; color: Theme.rain; vertical-alignment: center; }
+        }
+    }
+}
+
+export component WeatherCard inherits Card {
+    in property <WeatherView> data;
+    min-height: 0px;
+    clip: true;
+
+    VerticalLayout {
+        padding: Theme.pad;
+        padding-top: 28px;
+        padding-bottom: 24px;
+        spacing: 18px;
+
+        SectionTitle {
+            text: root.data.location != "" ? "天気 · " + root.data.location : "天気";
+            trailing: root.data.as-of;
+        }
+
+        if root.data.state != PanelState.ready: Placeholder {
+            vertical-stretch: 1;
+            title: root.data.message;
+            detail: root.data.detail;
+            tone: root.data.state == PanelState.error ? Theme.warn : Theme.text-secondary;
+        }
+
+        if root.data.state == PanelState.ready: HorizontalLayout {
+            spacing: 26px;
+            height: 132px;
+            opacity: root.data.dim ? 0.45 : 1.0;
+            VerticalLayout {
+                alignment: center;
+                WeatherIcon { kind: root.data.kind; is-day: root.data.is-day; size: 112px; }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 2px;
+                HorizontalLayout {
+                    spacing: 18px;
+                    Text {
+                        text: root.data.temp;
+                        font-size: 92px;
+                        font-weight: 300;
+                        color: Theme.text-primary;
+                        vertical-alignment: center;
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 4px;
+                        Text { text: root.data.condition; font-size: 30px; font-weight: 500; color: Theme.text-primary; }
+                        Text { text: root.data.feels; font-size: 19px; color: Theme.text-tertiary; }
+                    }
+                }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            VerticalLayout {
+                alignment: center;
+                spacing: 8px;
+                HorizontalLayout {
+                    spacing: 10px;
+                    alignment: end;
+                    Text { text: "最高"; font-size: 19px; color: Theme.text-tertiary; vertical-alignment: center; }
+                    Text { text: root.data.high; font-size: 30px; font-weight: 500; color: Theme.hot; }
+                }
+                HorizontalLayout {
+                    spacing: 10px;
+                    alignment: end;
+                    Text { text: "最低"; font-size: 19px; color: Theme.text-tertiary; vertical-alignment: center; }
+                    Text { text: root.data.low; font-size: 30px; font-weight: 500; color: Theme.cold; }
+                }
+                HorizontalLayout {
+                    spacing: 10px;
+                    alignment: end;
+                    Text { text: "降水"; font-size: 19px; color: Theme.text-tertiary; vertical-alignment: center; }
+                    Text { text: root.data.pop; font-size: 26px; font-weight: 500; color: Theme.rain; }
+                }
+            }
+        }
+
+        if root.data.state == PanelState.ready: Rectangle {
+            height: 172px;
+            border-radius: Theme.radius-small;
+            background: Theme.surface-sunken;
+            HorizontalLayout {
+                padding: 8px;
+                padding-top: 12px;
+                padding-bottom: 12px;
+                for cell in root.data.hours: HourCellView { cell: cell; }
+            }
+        }
+
+        if root.data.state == PanelState.ready: HorizontalLayout {
+            spacing: 20px;
+            height: 58px;
+            for cell in root.data.days: DayCellView { cell: cell; }
+        }
+
+        if root.data.state == PanelState.ready: Rectangle { vertical-stretch: 1; }
+
+        HorizontalLayout {
+            spacing: 12px;
+            height: 26px;
+            if root.data.stale: StaleBadge { text: root.data.stale-text; }
+            if root.data.sun-text != "": Text {
+                text: root.data.sun-text;
+                font-size: 17px;
+                color: Theme.text-tertiary;
+                vertical-alignment: center;
+            }
+            Rectangle { horizontal-stretch: 1; }
+            Text {
+                text: root.data.attribution;
+                font-size: 15px;
+                color: Theme.text-faint;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+// ───────────────────────────── Calendar ─────────────────────────────
+component EventLine inherits HorizontalLayout {
+    in property <EventRow> item;
+    height: 58px;
+    spacing: 22px;
+    VerticalLayout {
+        width: 92px;
+        alignment: center;
+        Text {
+            text: root.item.start;
+            font-size: 27px;
+            font-weight: 500;
+            color: root.item.ongoing ? Theme.accent : Theme.text-primary;
+            horizontal-alignment: right;
+        }
+    }
+    Rectangle {
+        width: 3px;
+        border-radius: 1.5px;
+        background: root.item.ongoing ? Theme.accent : Theme.hairline;
+    }
+    VerticalLayout {
+        alignment: center;
+        horizontal-stretch: 1;
+        spacing: 1px;
+        Text {
+            text: root.item.title;
+            font-size: 26px;
+            color: Theme.text-primary;
+            overflow: elide;
+        }
+        if root.item.location != "" || root.item.end != "": Text {
+            text: root.item.end != "" ? (root.item.location != "" ? "〜" + root.item.end + " · " + root.item.location : "〜" + root.item.end) : root.item.location;
+            font-size: 18px;
+            color: Theme.text-tertiary;
+            overflow: elide;
+        }
+    }
+    if root.item.relative != "": Text {
+        text: root.item.relative;
+        font-size: 19px;
+        color: Theme.text-tertiary;
+        vertical-alignment: center;
+    }
+}
+
+// One-line row for tomorrow's events below a busy today.
+component CompactEventLine inherits HorizontalLayout {
+    in property <EventRow> item;
+    height: 31px;
+    spacing: 22px;
+    Text {
+        width: 92px;
+        text: root.item.start;
+        font-size: 21px;
+        color: Theme.text-secondary;
+        horizontal-alignment: right;
+        vertical-alignment: center;
+    }
+    Rectangle { width: 3px; }
+    Text {
+        horizontal-stretch: 1;
+        text: root.item.end != "" ? root.item.title + "  〜" + root.item.end : root.item.title;
+        font-size: 21px;
+        color: Theme.text-secondary;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+
+component AllDayChip inherits Rectangle {
+    in property <string> text;
+    height: 40px;
+    border-radius: 10px;
+    background: Theme.surface-raised;
+    min-width: 120px;
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 16px;
+        spacing: 10px;
+        Text {
+            text: "終日";
+            font-size: 16px;
+            font-weight: 600;
+            color: Theme.accent;
+            vertical-alignment: center;
+        }
+        Text {
+            text: root.text;
+            font-size: 20px;
+            color: Theme.text-primary;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+}
+
+export component CalendarCard inherits Card {
+    in property <CalendarView> data;
+    // Never grow past the space the layout gives us; overflow is clipped.
+    min-height: 0px;
+    clip: true;
+
+    VerticalLayout {
+        padding: Theme.pad;
+        padding-bottom: 20px;
+        spacing: 14px;
+
+        SectionTitle {
+            text: "今日の予定";
+            trailing: root.data.count-text;
+            trailing-color: Theme.text-secondary;
+        }
+
+        if root.data.state != PanelState.ready && root.data.state != PanelState.empty: Placeholder {
+            vertical-stretch: 1;
+            title: root.data.message;
+            detail: root.data.detail;
+            tone: root.data.state == PanelState.error ? Theme.warn : Theme.text-secondary;
+        }
+
+        // Next / ongoing event hero.
+        if root.data.has-next: Rectangle {
+            height: 116px;
+            border-radius: 16px;
+            background: Theme.accent-soft;
+            border-width: 1px;
+            border-color: #5CC6E640;
+            HorizontalLayout {
+                padding-left: 26px;
+                padding-right: 26px;
+                spacing: 26px;
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 6px;
+                    Text {
+                        text: root.data.next-label;
+                        font-size: 18px;
+                        font-weight: 600;
+                        letter-spacing: 1px;
+                        color: Theme.accent;
+                    }
+                    Text {
+                        text: root.data.next.all-day ? "終日" : root.data.next.start + (root.data.next.end != "" ? " – " + root.data.next.end : "");
+                        font-size: 26px;
+                        font-weight: 500;
+                        color: Theme.text-secondary;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    spacing: 4px;
+                    Text {
+                        text: root.data.next.title;
+                        font-size: 36px;
+                        font-weight: 600;
+                        color: Theme.text-primary;
+                        overflow: elide;
+                    }
+                    if root.data.next.location != "": Text {
+                        text: root.data.next.location;
+                        font-size: 20px;
+                        color: Theme.text-secondary;
+                        overflow: elide;
+                    }
+                }
+                if root.data.next.relative != "": VerticalLayout {
+                    alignment: center;
+                    Pill {
+                        text: root.data.next.relative;
+                        tone: Theme.accent;
+                        outlined: true;
+                        font-size: 22px;
+                        font-weight: 600;
+                    }
+                }
+            }
+        }
+
+        if root.data.all-day.length > 0: HorizontalLayout {
+            spacing: 12px;
+            height: 40px;
+            for ev in root.data.all-day: AllDayChip { text: ev.title; }
+            Rectangle { horizontal-stretch: 1; }
+        }
+
+        if root.data.rows.length > 0: VerticalLayout {
+            spacing: 6px;
+            for ev in root.data.rows: EventLine { item: ev; }
+        }
+
+        if root.data.state == PanelState.empty: Placeholder {
+            vertical-stretch: 1;
+            title: root.data.message;
+            detail: root.data.detail;
+            title-size: 30px;
+        }
+
+        if root.data.tomorrow-label != "": VerticalLayout {
+            spacing: 6px;
+            Text {
+                text: root.data.tomorrow-label;
+                font-size: 18px;
+                font-weight: 600;
+                color: Theme.text-tertiary;
+            }
+            if root.data.state == PanelState.ready: VerticalLayout {
+                for ev in root.data.tomorrow: CompactEventLine { item: ev; }
+            }
+            if root.data.state != PanelState.ready: VerticalLayout {
+                spacing: 6px;
+                for ev in root.data.tomorrow: EventLine { item: ev; opacity: 0.75; }
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        HorizontalLayout {
+            spacing: 14px;
+            height: 26px;
+            if root.data.stale: StaleBadge { text: root.data.stale-text; }
+            if root.data.finished-text != "": Text {
+                text: root.data.finished-text;
+                font-size: 18px;
+                color: Theme.text-tertiary;
+                vertical-alignment: center;
+            }
+            Rectangle { horizontal-stretch: 1; }
+            if root.data.more-text != "": Text {
+                text: root.data.more-text;
+                font-size: 18px;
+                color: Theme.text-secondary;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+// ───────────────────────────── Earthquake ─────────────────────────────
+component ShindoBadge inherits Rectangle {
+    in property <string> value;
+    in property <int> level;
+    in property <length> size: 150px;
+    width: size;
+    height: size;
+    border-radius: 18px;
+    background: Theme.shindo-color(level);
+    VerticalLayout {
+        alignment: center;
+        spacing: 0px;
+        Text {
+            text: "最大震度";
+            font-size: root.size * 0.13;
+            font-weight: 600;
+            color: Theme.shindo-text-color(root.level);
+            opacity: 0.85;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: root.value;
+            font-size: root.value.character-count > 1 ? root.size * 0.36 : root.size * 0.5;
+            font-weight: 700;
+            color: Theme.shindo-text-color(root.level);
+            horizontal-alignment: center;
+        }
+    }
+}
+
+component QuakeHistoryLine inherits HorizontalLayout {
+    in property <QuakeRow> item;
+    height: 34px;
+    spacing: 12px;
+    Rectangle {
+        width: 44px;
+        height: 28px;
+        y: 3px;
+        border-radius: 6px;
+        background: Theme.shindo-color(root.item.level);
+        Text {
+            text: root.item.shindo;
+            font-size: 17px;
+            font-weight: 700;
+            color: Theme.shindo-text-color(root.item.level);
+        }
+    }
+    Text {
+        text: root.item.place;
+        font-size: 19px;
+        color: Theme.text-secondary;
+        vertical-alignment: center;
+        horizontal-stretch: 1;
+        overflow: elide;
+    }
+    Text {
+        text: root.item.time;
+        font-size: 17px;
+        color: Theme.text-tertiary;
+        vertical-alignment: center;
+    }
+}
+
+export component QuakeCard inherits Card {
+    in property <QuakeView> data;
+    outline: data.emphasis == 2 ? Theme.danger : data.emphasis == 1 ? #FFB54780 : Theme.hairline;
+    fill: data.emphasis == 2 ? @linear-gradient(90deg, #FF6B4F24 0%, Theme.surface 60%) : Theme.surface;
+
+    VerticalLayout {
+        padding: Theme.pad;
+        padding-top: 24px;
+        padding-bottom: 22px;
+        spacing: 14px;
+
+        SectionTitle {
+            text: "地震情報";
+            trailing: root.data.updated;
+        }
+
+        if !root.data.has-latest: Placeholder {
+            vertical-stretch: 1;
+            title: root.data.message;
+            detail: root.data.detail;
+            title-size: 26px;
+            tone: root.data.state == PanelState.error ? Theme.warn : Theme.text-secondary;
+        }
+
+        if root.data.has-latest: HorizontalLayout {
+            spacing: 28px;
+            vertical-stretch: 1;
+            VerticalLayout {
+                alignment: center;
+                ShindoBadge { value: root.data.shindo; level: root.data.level; size: 138px; }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 8px;
+                horizontal-stretch: 1;
+                Text {
+                    text: root.data.place;
+                    font-size: 34px;
+                    font-weight: 600;
+                    color: Theme.text-primary;
+                    overflow: elide;
+                }
+                HorizontalLayout {
+                    spacing: 12px;
+                    Text { text: root.data.occurred; font-size: 21px; color: Theme.text-secondary; }
+                    Text { text: root.data.relative; font-size: 21px; color: Theme.text-tertiary; }
+                }
+                HorizontalLayout {
+                    spacing: 10px;
+                    if root.data.magnitude != "": Pill { text: root.data.magnitude; fill: Theme.surface-raised; tone: Theme.text-primary; font-size: 18px; }
+                    if root.data.depth != "": Pill { text: root.data.depth; fill: Theme.surface-raised; tone: Theme.text-primary; font-size: 18px; }
+                    if root.data.tsunami != "": Pill {
+                        text: root.data.tsunami;
+                        fill: root.data.tsunami-alert ? Theme.danger-soft : Theme.surface-raised;
+                        tone: root.data.tsunami-alert ? Theme.danger : Theme.text-secondary;
+                        font-size: 18px;
+                        font-weight: root.data.tsunami-alert ? 700 : 500;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                }
+            }
+            if root.data.history.length > 0: Rectangle {
+                width: 1px;
+                background: Theme.divider;
+            }
+            if root.data.history.length > 0: VerticalLayout {
+                width: 330px;
+                alignment: center;
+                spacing: 4px;
+                Text { text: "それ以前"; font-size: 16px; font-weight: 600; color: Theme.text-tertiary; }
+                for q in root.data.history: QuakeHistoryLine { item: q; }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 12px;
+            height: 22px;
+            if root.data.stale: StaleBadge { text: root.data.stale-text; }
+            Rectangle { horizontal-stretch: 1; }
+            Text {
+                text: root.data.source;
+                font-size: 15px;
+                color: Theme.text-faint;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+// ───────────────────────────── Footer ─────────────────────────────
+export component Footer inherits HorizontalLayout {
+    in property <FooterView> data;
+    height: 30px;
+    spacing: 30px;
+    for chip in root.data.sources: HorizontalLayout {
+        spacing: 9px;
+        horizontal-stretch: 0;
+        VerticalLayout {
+            alignment: center;
+            StatusDot { health: chip.health; size: 9px; }
+        }
+        Text {
+            text: chip.name;
+            font-size: 17px;
+            color: Theme.text-tertiary;
+            vertical-alignment: center;
+        }
+        Text {
+            text: chip.time;
+            font-size: 17px;
+            color: Theme.text-faint;
+            vertical-alignment: center;
+        }
+    }
+    Rectangle { horizontal-stretch: 1; }
+    Text {
+        text: root.data.right-text;
+        font-size: 17px;
+        color: Theme.text-faint;
+        vertical-alignment: center;
+    }
+}
+
+// ───────────────────────────── Screen ─────────────────────────────
+export component OverviewScreen inherits Rectangle {
+    in property <HeaderData> header;
+    in property <ClockData> clock;
+    in property <CalendarView> calendar;
+    in property <WeatherView> weather;
+    in property <QuakeView> quake;
+    in property <FooterView> footer;
+
+    VerticalLayout {
+        padding-left: 52px;
+        padding-right: 52px;
+        padding-top: 34px;
+        padding-bottom: 22px;
+        spacing: 20px;
+
+        Header { data: root.header; }
+
+        HorizontalLayout {
+            spacing: Theme.gap;
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                width: 790px;
+                spacing: 4px;
+                ClockBlock { data: root.clock; }
+                Rectangle { height: 14px; }
+                WeatherCard { data: root.weather; vertical-stretch: 1; }
+            }
+
+            VerticalLayout {
+                spacing: Theme.gap;
+                horizontal-stretch: 1;
+                CalendarCard { data: root.calendar; vertical-stretch: 1; }
+                QuakeCard { data: root.quake; height: 300px; }
+            }
+        }
+
+        Footer { data: root.footer; }
+    }
+}

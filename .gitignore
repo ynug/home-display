@@ -1,0 +1,12 @@
+/target
+.env
+*.local.toml
+.DS_Store
+
+# JetBrains IDEs (RustRover, IntelliJ IDEA, CLion, Fleet)
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+.fleet/

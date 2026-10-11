@@ -1,0 +1,115 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//home-display//fixture//JA
+X-WR-CALNAME:サンプルカレンダー (fixture)
+X-WR-TIMEZONE:Asia/Tokyo
+BEGIN:VEVENT
+UID:a1@fixture.home-display
+SUMMARY:とても長いタイトルの予定がどのように省略されるかを確認するためのサンプル予定（第三四半期の振り返りと来期計画の共有会）
+DTSTART;VALUE=DATE:{{D+0}}
+DTEND;VALUE=DATE:{{D+1}}
+END:VEVENT
+BEGIN:VEVENT
+UID:a2@fixture.home-display
+SUMMARY:終日イベント その2：引っ越し準備
+DTSTART;VALUE=DATE:{{D+0}}
+DTEND;VALUE=DATE:{{D+1}}
+END:VEVENT
+BEGIN:VEVENT
+UID:a3@fixture.home-display
+SUMMARY:終日イベント その3
+DTSTART;VALUE=DATE:{{D+0}}
+DTEND;VALUE=DATE:{{D+1}}
+END:VEVENT
+BEGIN:VEVENT
+UID:l1@fixture.home-display
+SUMMARY:予定 1: 長い名前の打ち合わせ — プロジェクト「ホームディスプレイ」の表示レイアウトとデータ連携に関する詳細レビュー
+DTSTART;TZID=Asia/Tokyo:{{D+0}}T080000
+DTEND;TZID=Asia/Tokyo:{{D+0}}T084500
+LOCATION:第（本館 12F 東側エレベーター前を右に曲がって突き当たり）
+END:VEVENT
+BEGIN:VEVENT
+UID:l2@fixture.home-display
+SUMMARY:予定 2: 長い名前の打ち合わせ — プロジェクト「ホームディスプレイ」の表示レイアウトとデータ連携に関する詳細レビュー
+DTSTART;TZID=Asia/Tokyo:{{D+0}}T090000
+DTEND;TZID=Asia/Tokyo:{{D+0}}T094500
+LOCATION:第（本館 12F 東側エレベーター前を右に曲がって突き当たり）
+END:VEVENT
+BEGIN:VEVENT
+UID:l3@fixture.home-display
+SUMMARY:予定 3: 長い名前の打ち合わせ — プロジェクト「ホームディスプレイ」の表示レイアウトとデータ連携に関する詳細レビュー
+DTSTART;TZID=Asia/Tokyo:{{D+0}}T093000
+DTEND;TZID=Asia/Tokyo:{{D+0}}T097500
+LOCATION:第（本館 12F 東側エレベーター前を右に曲がって突き当たり）
+END:VEVENT
+BEGIN:VEVENT
+UID:l4@fixture.home-display
+SUMMARY:予定 4: 長い名前の打ち合わせ — プロジェクト「ホームディスプレイ」の表示レイアウトとデータ連携に関する詳細レビュー
+DTSTART;TZID=Asia/Tokyo:{{D+0}}T103000
+DTEND;TZID=Asia/Tokyo:{{D+0}}T107500
+LOCATION:第（本館 12F 東側エレベーター前を右に曲がって突き当たり）
+END:VEVENT
+BEGIN:VEVENT
+UID:l5@fixture.home-display
+SUMMARY:予定 5: 長い名前の打ち合わせ — プロジェクト「ホームディスプレイ」の表示レイアウトとデータ連携に関する詳細レビュー
+DTSTART;TZID=Asia/Tokyo:{{D+0}}T110000
+DTEND;TZID=Asia/Tokyo:{{D+0}}T114500
+LOCATION:第（本館 12F 東側エレベーター前を右に曲がって突き当たり）
+END:VEVENT
+BEGIN:VEVENT
+UID:l6@fixture.home-display
+SUMMARY:予定 6: 長い名前の打ち合わせ — プロジェクト「ホームディスプレイ」の表示レイアウトとデータ連携に関する詳細レビュー
+DTSTART;TZID=Asia/Tokyo:{{D+0}}T120000
+DTEND;TZID=Asia/Tokyo:{{D+0}}T124500
+LOCATION:第（本館 12F 東側エレベーター前を右に曲がって突き当たり）
+END:VEVENT
+BEGIN:VEVENT
+UID:l7@fixture.home-display
+SUMMARY:予定 7: 長い名前の打ち合わせ — プロジェクト「ホームディスプレイ」の表示レイアウトとデータ連携に関する詳細レビュー
+DTSTART;TZID=Asia/Tokyo:{{D+0}}T133000
+DTEND;TZID=Asia/Tokyo:{{D+0}}T137500
+LOCATION:第（本館 12F 東側エレベーター前を右に曲がって突き当たり）
+END:VEVENT
+BEGIN:VEVENT
+UID:l8@fixture.home-display
+SUMMARY:予定 8: 長い名前の打ち合わせ — プロジェクト「ホームディスプレイ」の表示レイアウトとデータ連携に関する詳細レビュー
+DTSTART;TZID=Asia/Tokyo:{{D+0}}T140000
+DTEND;TZID=Asia/Tokyo:{{D+0}}T144500
+LOCATION:第（本館 12F 東側エレベーター前を右に曲がって突き当たり）
+END:VEVENT
+BEGIN:VEVENT
+UID:l9@fixture.home-display
+SUMMARY:予定 9: 長い名前の打ち合わせ — プロジェクト「ホームディスプレイ」の表示レイアウトとデータ連携に関する詳細レビュー
+DTSTART;TZID=Asia/Tokyo:{{D+0}}T150000
+DTEND;TZID=Asia/Tokyo:{{D+0}}T154500
+LOCATION:第（本館 12F 東側エレベーター前を右に曲がって突き当たり）
+END:VEVENT
+BEGIN:VEVENT
+UID:l10@fixture.home-display
+SUMMARY:予定 10: 長い名前の打ち合わせ — プロジェクト「ホームディスプレイ」の表示レイアウトとデータ連携に関する詳細レビュー
+DTSTART;TZID=Asia/Tokyo:{{D+0}}T163000
+DTEND;TZID=Asia/Tokyo:{{D+0}}T167500
+LOCATION:第（本館 12F 東側エレベーター前を右に曲がって突き当たり）
+END:VEVENT
+BEGIN:VEVENT
+UID:l11@fixture.home-display
+SUMMARY:予定 11: 長い名前の打ち合わせ — プロジェクト「ホームディスプレイ」の表示レイアウトとデータ連携に関する詳細レビュー
+DTSTART;TZID=Asia/Tokyo:{{D+0}}T173000
+DTEND;TZID=Asia/Tokyo:{{D+0}}T177500
+LOCATION:第（本館 12F 東側エレベーター前を右に曲がって突き当たり）
+END:VEVENT
+BEGIN:VEVENT
+UID:l12@fixture.home-display
+SUMMARY:予定 12: 長い名前の打ち合わせ — プロジェクト「ホームディスプレイ」の表示レイアウトとデータ連携に関する詳細レビュー
+DTSTART;TZID=Asia/Tokyo:{{D+0}}T190000
+DTEND;TZID=Asia/Tokyo:{{D+0}}T194500
+LOCATION:第（本館 12F 東側エレベーター前を右に曲がって突き当たり）
+END:VEVENT
+BEGIN:VEVENT
+UID:l13@fixture.home-display
+SUMMARY:予定 13: 長い名前の打ち合わせ — プロジェクト「ホームディスプレイ」の表示レイアウトとデータ連携に関する詳細レビュー
+DTSTART;TZID=Asia/Tokyo:{{D+0}}T203000
+DTEND;TZID=Asia/Tokyo:{{D+0}}T207500
+LOCATION:第（本館 12F 東側エレベーター前を右に曲がって突き当たり）
+END:VEVENT
+END:VCALENDAR

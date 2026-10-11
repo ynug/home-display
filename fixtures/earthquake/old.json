@@ -1,0 +1,2 @@
+[
+{"code":551,"id":"fixture-o","_comment":"SAMPLE fixture - not a real earthquake","earthquake":{"domesticTsunami":"None","foreignTsunami":"Unknown","hypocenter":{"depth":10,"latitude":0,"longitude":0,"magnitude":3.1,"name":"長野県南部"},"maxScale":20,"time":"{{AGO:3100}}"},"issue":{"source":"気象庁","time":"{{AGO:3097}}","type":"DetailScale"}}]

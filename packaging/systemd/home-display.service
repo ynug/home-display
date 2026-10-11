@@ -1,0 +1,81 @@
+# Home Display — full-screen dashboard on DRM/KMS (no X11/Wayland).
+#
+# Runs as the unprivileged system user "home-display" with access to
+# /dev/dri (group video/render) and /dev/input (group input) only.
+# Secrets (iCal URL) come from /etc/home-display/home-display.env (0600 root),
+# which systemd reads before dropping privileges.
+#
+# Local tweaks: `systemctl edit home-display` (e.g. SLINT_BACKEND, SLINT_DRM_OUTPUT).
+
+[Unit]
+Description=Home Display dashboard (Slint LinuxKMS)
+Documentation=file:///usr/share/doc/home-display/README.md file:///usr/share/doc/home-display/linux-kms.md
+Wants=network-online.target
+After=network-online.target systemd-user-sessions.service
+# Don't share the display with a login prompt on the first VT.
+Conflicts=getty@tty1.service
+After=getty@tty1.service
+# Give up (and stay failed) after 10 crashes within 10 minutes.
+StartLimitIntervalSec=600
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=home-display
+Group=home-display
+SupplementaryGroups=video render input
+ExecStart=/usr/bin/home-display --config /etc/home-display/config.toml
+Restart=always
+RestartSec=5
+
+# OpenGL ES via GBM/EGL. Use linuxkms-software if the GPU driver is unavailable.
+Environment=SLINT_BACKEND=linuxkms-femtovg
+Environment=RUST_LOG=info
+EnvironmentFile=-/etc/home-display/home-display.env
+
+# Writable locations (holiday CSV cache, map tiles, UI overrides).
+CacheDirectory=home-display
+StateDirectory=home-display
+WorkingDirectory=/var/lib/home-display
+UMask=0077
+
+# Logs go to journald (rotated by journald; the app writes no log files).
+StandardOutput=journal
+StandardError=journal
+
+# Memory guard for long-running operation; tune for the device.
+MemoryHigh=400M
+MemoryMax=600M
+
+# ── Hardening ──
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @mount @swap @reboot @module @raw-io @cpu-emulation @debug @obsolete
+# AF_NETLINK: udev hot-plug events for input devices.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+# Only the GPU/display and input devices.
+DevicePolicy=closed
+DeviceAllow=char-drm rw
+DeviceAllow=char-input rw
+# Mesa drivers may JIT shaders: W^X enforcement is left off on purpose.
+MemoryDenyWriteExecute=no
+
+[Install]
+WantedBy=multi-user.target

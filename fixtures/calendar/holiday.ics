@@ -1,0 +1,26 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//home-display//fixture//JA
+X-WR-CALNAME:サンプルカレンダー (fixture)
+X-WR-TIMEZONE:Asia/Tokyo
+BEGIN:VEVENT
+UID:trip@fixture.home-display
+SUMMARY:家族で日帰り旅行
+DTSTART;VALUE=DATE:{{D+0}}
+DTEND;VALUE=DATE:{{D+1}}
+END:VEVENT
+BEGIN:VEVENT
+UID:train@fixture.home-display
+SUMMARY:特急に乗車
+DTSTART;TZID=Asia/Tokyo:{{D+0}}T090500
+DTEND;TZID=Asia/Tokyo:{{D+0}}T103000
+LOCATION:新宿駅 7番線
+END:VEVENT
+BEGIN:VEVENT
+UID:onsen@fixture.home-display
+SUMMARY:温泉
+DTSTART;TZID=Asia/Tokyo:{{D+0}}T140000
+DTEND;TZID=Asia/Tokyo:{{D+0}}T160000
+LOCATION:箱根湯本
+END:VEVENT
+END:VCALENDAR

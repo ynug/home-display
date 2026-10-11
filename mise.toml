@@ -1,0 +1,91 @@
+# mise — toolchain + common tasks for Home Display.
+#   mise install          # Rust (rustfmt / clippy 付き) を用意
+#   mise run              # タスク一覧から選んで実行
+#   mise run dev          # サンプルデータで起動
+#   mise run check        # fmt + clippy + test（CI と同じ確認）
+
+[tools]
+# Same version as rust-toolchain.toml (used by CI) — change both together.
+rust = { version = "1.98.1", components = "rustfmt,clippy" }
+
+[env]
+# 開発時は .env（git 管理外）から秘密の iCal URL などを読み込む。無ければ無視。
+_.file = { path = ".env", redact = true }
+RUST_LOG = "{{ get_env(name='RUST_LOG', default='info') }}"
+
+# ───────────── 起動 ─────────────
+
+[tasks.dev]
+description = "サンプルデータ（fixture）で起動。例: mise run dev -- --fixture rain"
+run = "cargo run -- --fixture default"
+
+[tasks.live]
+description = "実データで起動（~/.config/home-display/config.toml か packaging の設定を使用）"
+run = """
+if [ -f "$HOME/.config/home-display/config.toml" ]; then
+  cargo run
+else
+  cargo run -- --config packaging/config/config.toml
+fi
+"""
+
+[tasks.demo]
+description = "時刻を 10:40 に固定し、全画面で表示（デモ・確認用）"
+run = "cargo run -- --fixture default --now 2026-10-11T10:40 --fullscreen"
+
+[tasks.fixtures]
+description = "fixture シナリオの一覧"
+run = "cargo run --quiet -- --list-fixtures"
+
+[tasks.screenshots]
+description = "全シナリオを 1920x1080 PNG に描画（target/shots/）"
+run = """
+cargo build --release
+for sc in default empty holiday rain long offline stale; do
+  ./target/release/home-display --fixture "$sc" --now 2026-10-11T10:40 --screenshot-dir target/shots
+done
+"""
+
+[tasks.check-config]
+description = "設定ファイルの検証（iCal URL は表示しない）"
+run = "cargo run --quiet -- --check-config"
+
+# ───────────── 品質チェック ─────────────
+
+[tasks.fmt]
+description = "コード整形"
+run = "cargo fmt --all"
+
+[tasks.lint]
+description = "clippy（警告をエラー扱い）"
+run = "cargo clippy --all-targets -- -D warnings"
+
+[tasks.test]
+description = "テスト（単体・UI スモーク・描画 E2E）"
+run = "cargo test"
+
+[tasks.check]
+description = "CI と同じ確認: fmt --check → clippy → test"
+run = [
+  "cargo fmt --all --check",
+  "cargo clippy --all-targets -- -D warnings",
+  "cargo test",
+]
+
+# ───────────── ビルド・配布 ─────────────
+
+[tasks.release]
+description = "リリースビルド（このマシン向け、desktop バックエンド）"
+run = "cargo build --release"
+
+[tasks.build-kms]
+description = "Linux 実機向けビルド（LinuxKMS）。Linux 上でのみ実行可能"
+run = "cargo build --release --no-default-features --features kms"
+
+[tasks.deb]
+description = "Linux 上で .deb を作成（target/debian/）"
+depends = ["build-kms"]
+run = """
+command -v cargo-deb >/dev/null || cargo install cargo-deb --locked --version "^3"
+cargo deb --no-build --no-strip
+"""
