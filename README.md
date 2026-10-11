@@ -341,9 +341,11 @@ cargo deb --no-build --no-strip                               # → target/debia
 
 - Rust のバージョンは [`rust-toolchain.toml`](rust-toolchain.toml)（CI）と `mise.toml`（手元）で同じ版に固定。上げるときは両方を変更
 - 外部の Actions はコミットの識別子（SHA）で固定
-- macOS: fmt / clippy / test / fixture スクリーンショットを artifact 化
-- Linux amd64（`ubuntu-24.04`）/ arm64（`ubuntu-24.04-arm`）をそれぞれ **Debian bookworm コンテナでネイティブビルド**
-  （glibc 2.36 基準 → bookworm / trixie / Raspberry Pi OS 64-bit で動作する想定）: clippy / test / release ビルド / `.deb`
+- Linux arm64（`ubuntu-24.04-arm`、本命の Raspberry Pi 向け）/ amd64（`ubuntu-24.04`）をそれぞれ
+  **Debian bookworm コンテナでネイティブビルド**（glibc 2.36 基準 → bookworm / trixie / Raspberry Pi OS 64-bit で動作する想定）:
+  clippy / test / release ビルド / `.deb`。フォーマットの確認（`cargo fmt --check`）は arm64 でのみ実行
+- macOS は CI でビルドしません（配布もしません）。手元で `mise run check` を通し、`mise run dev` などソースから実行します
+- コンテナはダイジェスト、rustup はハッシュ照合、cargo-deb は版を固定（自動で最新を使う指定はしない）
 - `v*` タグを push すると GitHub Release に `.deb` と Raspberry Pi 用の `install.sh` を添付
 
 ## アーキテクチャ

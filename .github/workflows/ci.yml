@@ -15,38 +15,11 @@ env:
   CARGO_INCREMENTAL: "0"
 
 jobs:
-  # Development target: fmt, clippy, tests, and fixture screenshots for review.
-  macos:
-    name: macOS (desktop) — fmt / clippy / test
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # The version comes from rust-toolchain.toml.
-      - name: Install Rust
-        run: rustup toolchain install "$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)" --profile minimal --component rustfmt,clippy
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: macos-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
-      - run: cargo fmt --all --check
-      - run: cargo clippy --all-targets --locked -- -D warnings
-      - run: cargo test --locked
-      - name: Render fixture screenshots (software renderer)
-        run: |
-          for sc in default empty rain offline stale; do
-            cargo run --locked --quiet -- --fixture "$sc" --now 2026-10-11T10:40 --screenshot-dir shots
-          done
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: screenshots
-          path: shots/*.png
-
-  # Production target: native builds (no cross toolchain needed for the
-  # system libraries), in Debian bookworm so the binary runs on bookworm/trixie
-  # and Raspberry Pi OS Lite 64-bit (glibc 2.36 baseline).
+  # Native builds (no cross toolchain needed for the system libraries), in
+  # Debian bookworm so the binary runs on bookworm/trixie and Raspberry Pi OS
+  # Lite 64-bit (glibc 2.36 baseline). arm64 is the main target (Raspberry Pi),
+  # so OS-independent checks (rustfmt) run there only. macOS is not built in CI:
+  # it is run from source (`mise run dev`) and checked locally (`mise run check`).
   linux:
     name: Linux ${{ matrix.arch }} — kms build + .deb
     strategy:
@@ -58,7 +31,8 @@ jobs:
           - arch: arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
-    container: debian:bookworm
+    # debian:bookworm (multi-arch index digest, amd64 + arm64), pinned 2026-10-11.
+    container: debian:bookworm@sha256:2c037a04925515fdd6ea85ea14a682d0e79931f5e9f5d07b6dbfc6ba12f9e858
     steps:
       - name: System packages
         run: |
@@ -69,10 +43,22 @@ jobs:
             libegl-dev libgles-dev libfontconfig-dev libfreetype-dev \
             fonts-noto-cjk
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # rustup only; the version comes from rust-toolchain.toml.
+      # rustup-init at a fixed version, verified against SHA-256 values recorded here
+      # (from static.rust-lang.org) before it runs. The Rust version comes from rust-toolchain.toml.
       - name: Install Rust
+        env:
+          RUSTUP_VERSION: "1.29.1"
         run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+          case "$(uname -m)" in
+            x86_64)  t=x86_64-unknown-linux-gnu;  sum=dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71 ;;
+            aarch64) t=aarch64-unknown-linux-gnu; sum=15f6e4ce9f583b929c996c91562bad6d4454f3281de858b02cdfdef615fac433 ;;
+            *) echo "unsupported arch $(uname -m)"; exit 1 ;;
+          esac
+          curl --proto '=https' --tlsv1.2 -sSfLo /tmp/rustup-init "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/${t}/rustup-init"
+          echo "${sum}  /tmp/rustup-init" | sha256sum -c -
+          chmod +x /tmp/rustup-init
+          /tmp/rustup-init -y --profile minimal --default-toolchain none
+          rm /tmp/rustup-init
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           "$HOME/.cargo/bin/rustup" toolchain install "$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)" --profile minimal --component rustfmt,clippy
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -82,6 +68,9 @@ jobs:
             ~/.cargo/git
             target
           key: linux-${{ matrix.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+      - name: Format
+        if: matrix.arch == 'arm64'
+        run: cargo fmt --all --check
       - name: Clippy (kms)
         run: cargo clippy --locked --no-default-features --features kms --all-targets -- -D warnings
       - name: Tests (kms features; UI tests use the headless testing backend)
@@ -96,7 +85,7 @@ jobs:
           ./target/release/home-display --check-config --config packaging/config/config.toml
       - name: Build .deb
         run: |
-          cargo install cargo-deb --locked --version "^3"
+          cargo install cargo-deb --locked --version "=3.8.0"
           cargo deb --locked --no-build --no-strip
           dpkg-deb --info target/debian/*.deb
           dpkg-deb --contents target/debian/*.deb
@@ -110,7 +99,7 @@ jobs:
   release:
     name: Publish release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [macos, linux]
+    needs: [linux]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

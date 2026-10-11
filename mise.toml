@@ -86,6 +86,6 @@ run = "cargo build --release --no-default-features --features kms"
 description = "Linux 上で .deb を作成（target/debian/）"
 depends = ["build-kms"]
 run = """
-command -v cargo-deb >/dev/null || cargo install cargo-deb --locked --version "^3"
+command -v cargo-deb >/dev/null || cargo install cargo-deb --locked --version "=3.8.0"
 cargo deb --no-build --no-strip
 """
