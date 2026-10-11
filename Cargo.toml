@@ -1,6 +1,6 @@
 [package]
 name = "home-display"
-version = "0.1.0"
+version = "0.0.3"
 edition = "2024"
 rust-version = "1.98"
 description = "Always-on home information display (clock, calendar, weather, earthquakes, rain radar) built with Rust and Slint"
@@ -60,6 +60,9 @@ maintainer = "Home Display maintainers <noreply@example.invalid>"
 copyright = "Home Display contributors"
 section = "misc"
 priority = "optional"
+# No Debian revision suffix: the file is home-display_<version>_<arch>.deb, and
+# CI checks that <version> equals the pushed tag (v<version>).
+revision = ""
 extended-description = """\
 Always-on home information display rendered directly on DRM/KMS with Slint.
 Shows the clock, Japanese holidays, an iCal calendar (today and tomorrow),

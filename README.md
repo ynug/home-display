@@ -350,7 +350,8 @@ mise run check-paths  # バイナリにビルドしたマシンの絶対パス�
 - リリースビルドは `--remap-path-prefix` 等でビルドしたマシンの絶対パスを除去し（[`scripts/release-flags.sh`](scripts/release-flags.sh)）、
   CI で残っていないことを検査。素の `cargo build --release` では除去されないので、配布物は mise のタスクで作ります
 - リリースプロファイルは `lto = "fat"`・`codegen-units = 1`（macOS 実測でバイナリ 31.2 MB → 24.4 MB。ビルドは遅くなる）
-- `v*` タグを push すると GitHub Release に `.deb` と Raspberry Pi 用の `install.sh` を添付
+- `v*` タグを push すると GitHub Release に `.deb`（`home-display_<版>_<arch>.deb`）と Raspberry Pi 用の `install.sh` を添付。
+  タグは `v` + `Cargo.toml` の `version`（例: `v0.0.3`）で、一致しないと CI が失敗
 
 ## アーキテクチャ
 

@@ -6,8 +6,8 @@
 # Re-running it updates to the newest release and keeps all settings.
 #
 #   sudo ./install.sh --repo OWNER/REPO                 # latest GitHub release
-#   sudo ./install.sh --repo OWNER/REPO --version v0.2.0
-#   sudo ./install.sh --deb ./home-display_0.1.0-1_arm64.deb
+#   sudo ./install.sh --repo OWNER/REPO --version v0.0.3
+#   sudo ./install.sh --deb ./home-display_0.0.3_arm64.deb
 #   sudo ./install.sh --deb ./home-display-linux-arm64.zip   # Actions artifact
 #
 # Secrets: the iCal URL is read from the terminal without echo, written only to

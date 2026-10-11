@@ -36,12 +36,17 @@ ssh <ユーザー名>@home-display.local
 
 `.deb` は `v*` タグを push したときに GitHub Release に添付されます（[ci.yml](../.github/workflows/ci.yml)）。
 
+タグは `Cargo.toml` の `version` に `v` を付けたものにします（例: `version = "0.0.3"` → `v0.0.3`）。
+一致しないと CI がビルド前に失敗します。版を上げるときは先に `Cargo.toml` を書き換え、
+`cargo check` で `Cargo.lock` も更新してからコミットします。
+
 ```sh
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.0.3
+git push origin v0.0.3
 ```
 
-Release には `home-display_<版>_arm64.deb`（Pi 用）と `_amd64.deb`、`install.sh` が添付されます。
+Release には `home-display_0.0.3_arm64.deb`（Pi 用）と `home-display_0.0.3_amd64.deb`、`install.sh` が添付されます
+（ファイル名の版はタグから `v` を除いたものと同じ）。
 タグを付けずに試す場合は、Actions の実行結果から成果物 `home-display-linux-arm64`（zip）をダウンロードし、
 `scp` で Pi に送って `--deb` で指定します（下記）。
 
@@ -72,9 +77,9 @@ sudo bash install.sh --repo OWNER/REPO
 ### その他の指定方法
 
 ```sh
-sudo bash install.sh --repo OWNER/REPO --version v0.2.0     # 版を指定
+sudo bash install.sh --repo OWNER/REPO --version v0.0.3     # 版を指定
 sudo bash install.sh --deb ./home-display-linux-arm64.zip    # Actions の成果物（zip のまま可）
-sudo bash install.sh --deb ./home-display_0.1.0-1_arm64.deb  # .deb を直接
+sudo bash install.sh --deb ./home-display_0.0.3_arm64.deb    # .deb を直接
 sudo bash install.sh --repo OWNER/REPO --yes                 # 質問なし（更新用。設定は変えない）
 ```
 
