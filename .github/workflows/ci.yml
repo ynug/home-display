@@ -13,6 +13,8 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
+  # mise: never prompt in CI.
+  MISE_YES: "1"
 
 jobs:
   # Native builds (no cross toolchain needed for the system libraries), in
@@ -44,8 +46,9 @@ jobs:
             fonts-noto-cjk
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # rustup-init at a fixed version, verified against SHA-256 values recorded here
-      # (from static.rust-lang.org) before it runs. The Rust version comes from rust-toolchain.toml.
-      - name: Install Rust
+      # (from static.rust-lang.org) before it runs. mise then installs the Rust
+      # version from mise.toml through this rustup.
+      - name: Install rustup
         env:
           RUSTUP_VERSION: "1.29.1"
         run: |
@@ -60,23 +63,47 @@ jobs:
           /tmp/rustup-init -y --profile minimal --default-toolchain none
           rm /tmp/rustup-init
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-          "$HOME/.cargo/bin/rustup" toolchain install "$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)" --profile minimal --component rustfmt,clippy
+      # mise at a fixed version, verified against SHA-256 values recorded here
+      # (from the release's SHASUMS256.txt). Builds run through the same mise
+      # tasks as on a developer machine.
+      - name: Install mise
+        env:
+          MISE_VERSION: "2026.9.4"
+        run: |
+          case "$(uname -m)" in
+            x86_64)  a=linux-x64;   sum=175e85492247586b8bcc428caf9f6bbe79b18edaa28e9a084086fd1b40cc8a0d ;;
+            aarch64) a=linux-arm64; sum=858911883188ab4f0c10ba0d4e401f3af47737d3035c1820cd3c8aa400d09478 ;;
+            *) echo "unsupported arch $(uname -m)"; exit 1 ;;
+          esac
+          curl --proto '=https' --tlsv1.2 -sSfLo /usr/local/bin/mise "https://github.com/jdx/mise/releases/download/v${MISE_VERSION}/mise-v${MISE_VERSION}-${a}"
+          echo "${sum}  /usr/local/bin/mise" | sha256sum -c -
+          chmod +x /usr/local/bin/mise
+          mise --version
+          mise trust
+      - name: Install Rust (mise.toml; must match rust-toolchain.toml)
+        run: |
+          want=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)
+          grep -q "^rust = { version = \"${want}\"" mise.toml || { echo "rust-toolchain.toml (${want}) and mise.toml disagree"; exit 1; }
+          mise install
+          mise exec -- rustc --version
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: linux-${{ matrix.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+          key: linux-${{ matrix.arch }}-${{ hashFiles('mise.toml', 'rust-toolchain.toml', 'Cargo.lock') }}
       - name: Format
         if: matrix.arch == 'arm64'
-        run: cargo fmt --all --check
+        run: mise run fmt -- --check
       - name: Clippy (kms)
-        run: cargo clippy --locked --no-default-features --features kms --all-targets -- -D warnings
+        run: mise run lint-kms
       - name: Tests (kms features; UI tests use the headless testing backend)
-        run: cargo test --locked --no-default-features --features kms
-      - name: Release build
-        run: cargo build --locked --release --no-default-features --features kms
+        run: mise run test-kms
+      - name: Release build (build-machine paths stripped)
+        run: mise run build-kms
+      - name: No build-machine paths in the binary
+        run: mise run check-paths
       - name: Inspect binary
         run: |
           file target/release/home-display
@@ -85,8 +112,7 @@ jobs:
           ./target/release/home-display --check-config --config packaging/config/config.toml
       - name: Build .deb
         run: |
-          cargo install cargo-deb --locked --version "=3.8.0"
-          cargo deb --locked --no-build --no-strip
+          mise run deb
           dpkg-deb --info target/debian/*.deb
           dpkg-deb --contents target/debian/*.deb
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

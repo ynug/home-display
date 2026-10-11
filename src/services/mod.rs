@@ -41,6 +41,10 @@ impl Http {
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(30))
             .pool_idle_timeout(Duration::from_secs(60))
+            // Redirects must not forward the (secret) iCal URL as Referer,
+            // and every source is HTTPS: never follow a downgrade to http.
+            .referer(false)
+            .https_only(true)
             .build()?;
         Ok(Http { client })
     }

@@ -264,10 +264,18 @@ pub fn encode_png(img: &RgbImage) -> Result<Vec<u8>, SourceError> {
     Ok(out)
 }
 
+/// Downloaded tiles are 256–512 px; refuse anything larger before decoding
+/// so a malformed or hostile PNG cannot make us allocate huge buffers.
+const MAX_TILE_PX: u32 = 1024;
+
 fn decode_tile(bytes: &[u8]) -> Option<RgbaImage> {
-    image::load_from_memory_with_format(bytes, image::ImageFormat::Png)
-        .ok()
-        .map(|i| i.to_rgba8())
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(MAX_TILE_PX);
+    limits.max_image_height = Some(MAX_TILE_PX);
+    limits.max_alloc = Some(16 * 1024 * 1024);
+    let mut reader = image::ImageReader::with_format(std::io::Cursor::new(bytes), image::ImageFormat::Png);
+    reader.limits(limits);
+    reader.decode().ok().map(|i| i.to_rgba8())
 }
 
 // ───────────────────────────── progress & animation timing ─────────────────────────────
@@ -1010,6 +1018,21 @@ pub async fn run_fixture(ctx: Context, spec: FixtureRadar) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn png(w: u32, h: u32) -> Vec<u8> {
+        let mut out = Vec::new();
+        image::RgbaImage::new(w, h)
+            .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
+            .unwrap();
+        out
+    }
+
+    #[test]
+    fn oversized_tiles_are_rejected() {
+        assert!(decode_tile(&png(256, 256)).is_some());
+        assert!(decode_tile(&png(MAX_TILE_PX + 1, 1)).is_none());
+        assert!(decode_tile(b"not a png").is_none());
+    }
 
     #[test]
     fn world_px_matches_known_tile() {

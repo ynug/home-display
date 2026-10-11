@@ -40,7 +40,7 @@ DRM/KMS へ直接描画）の検証手順と、現時点での検証状況をま
 sudo apt install build-essential pkg-config cmake clang \
   libinput-dev libudev-dev libxkbcommon-dev libgbm-dev libdrm-dev \
   libegl-dev libgles-dev libfontconfig-dev libfreetype-dev
-cargo build --release --no-default-features --features kms
+mise run build-kms   # = cargo build --release --no-default-features --features kms（パス除去付き）
 ```
 
 ## 3. 権限モデル（root で実行しない）

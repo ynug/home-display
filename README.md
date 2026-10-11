@@ -331,21 +331,25 @@ systemd ユニットは専用ユーザー・`Restart=always`・メモリ上限�
 ネイティブでビルドする場合の必要パッケージと実機の検証手順は [docs/linux-kms.md](docs/linux-kms.md) を参照してください。
 
 ```sh
-cargo build --release --no-default-features --features kms   # Linux 上で
-cargo deb --no-build --no-strip                               # → target/debian/home-display_*.deb
+mise run deb          # Linux 上で: リリースビルド（LinuxKMS）→ target/debian/home-display_*.deb
+mise run check-paths  # バイナリにビルドしたマシンの絶対パス（ユーザー名）が無いことを確認
 ```
 
 ## CI / リリース
 
 [.github/workflows/ci.yml](.github/workflows/ci.yml)
 
-- Rust のバージョンは [`rust-toolchain.toml`](rust-toolchain.toml)（CI）と `mise.toml`（手元）で同じ版に固定。上げるときは両方を変更
+- **CI も手元と同じ mise のタスク**（`lint-kms` / `test-kms` / `build-kms` / `check-paths` / `deb`）で実行。Rust の版は `mise.toml` から入り、
+  [`rust-toolchain.toml`](rust-toolchain.toml)（mise を使わない人向け）と一致しないと CI が失敗します。上げるときは両方を変更
 - 外部の Actions はコミットの識別子（SHA）で固定
 - Linux arm64（`ubuntu-24.04-arm`、本命の Raspberry Pi 向け）/ amd64（`ubuntu-24.04`）をそれぞれ
   **Debian bookworm コンテナでネイティブビルド**（glibc 2.36 基準 → bookworm / trixie / Raspberry Pi OS 64-bit で動作する想定）:
   clippy / test / release ビルド / `.deb`。フォーマットの確認（`cargo fmt --check`）は arm64 でのみ実行
 - macOS は CI でビルドしません（配布もしません）。手元で `mise run check` を通し、`mise run dev` などソースから実行します
-- コンテナはダイジェスト、rustup はハッシュ照合、cargo-deb は版を固定（自動で最新を使う指定はしない）
+- コンテナはダイジェスト、rustup と mise はハッシュ照合、cargo-deb は版を固定（自動で最新を使う指定はしない）
+- リリースビルドは `--remap-path-prefix` 等でビルドしたマシンの絶対パスを除去し（[`scripts/release-flags.sh`](scripts/release-flags.sh)）、
+  CI で残っていないことを検査。素の `cargo build --release` では除去されないので、配布物は mise のタスクで作ります
+- リリースプロファイルは `lto = "fat"`・`codegen-units = 1`（macOS 実測でバイナリ 31.2 MB → 24.4 MB。ビルドは遅くなる）
 - `v*` タグを push すると GitHub Release に `.deb` と Raspberry Pi 用の `install.sh` を添付
 
 ## アーキテクチャ
@@ -374,7 +378,7 @@ ui/*.slint     表示のみ（Overview / Radar / Settings、テーマ、アイ�
 mise run check    # = cargo fmt --check → cargo clippy --all-targets -D warnings → cargo test
 ```
 
-単体 87 + UI スモーク 2（Slint testing backend）+ E2E 描画 1。E2E テストは fixture → サービス → コントローラー →
+単体 89 + UI スモーク 2（Slint testing backend）+ E2E 描画 1。E2E テストは fixture → サービス → コントローラー →
 ソフトウェアレンダラー → PNG までを通しで実行します。
 
 ## 検証状況
@@ -382,7 +386,7 @@ mise run check    # = cargo fmt --check → cargo clippy --all-targets -D warnin
 | 項目 | 状況 |
 |---|---|
 | macOS: ビルド・起動（winit + femtovg ウィンドウ）・自動ローテーション・秒表示 | ✅ 確認済み |
-| macOS: fmt / clippy（`-D warnings`）/ 90 テスト | ✅ 成功 |
+| macOS: fmt / clippy（`-D warnings`）/ 92 テスト | ✅ 成功 |
 | 全 fixture シナリオの 1920×1080 描画（ソフトウェアレンダラー） | ✅ 目視確認済み |
 | ライブ取得: 気象庁ナウキャスト（実測・予測）+ 地理院タイル / 気象庁XML（地震）/ Open-Meteo / 内閣府 CSV | ✅ macOS から実データで確認 |
 | 代替経路: 気象庁 URL を故意に 404 にして RainViewer / P2P地震情報へ自動切替 | ✅ 実データで確認 |

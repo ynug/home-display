@@ -2,10 +2,11 @@
 #   mise install          # Rust (rustfmt / clippy 付き) を用意
 #   mise run              # タスク一覧から選んで実行
 #   mise run dev          # サンプルデータで起動
-#   mise run check        # fmt + clippy + test（CI と同じ確認）
+#   mise run check        # fmt + clippy + test（手元の確認）
 
 [tools]
-# Same version as rust-toolchain.toml (used by CI) — change both together.
+# CI also installs Rust through this file. rust-toolchain.toml pins the same
+# version for plain rustup/cargo users — change both together (CI checks they match).
 rust = { version = "1.98.1", components = "rustfmt,clippy" }
 
 [env]
@@ -65,27 +66,62 @@ description = "テスト（単体・UI スモーク・描画 E2E）"
 run = "cargo test"
 
 [tasks.check]
-description = "CI と同じ確認: fmt --check → clippy → test"
+description = "手元の確認: fmt --check → clippy → test（このマシン向けの構成）"
 run = [
   "cargo fmt --all --check",
-  "cargo clippy --all-targets -- -D warnings",
-  "cargo test",
+  "cargo clippy --all-targets --locked -- -D warnings",
+  "cargo test --locked",
 ]
 
+# Linux 実機向け（LinuxKMS）の確認。CI はこれらのタスクを実行する。
+[tasks.lint-kms]
+description = "clippy（LinuxKMS 構成。Linux 上でのみ実行可能）"
+run = "cargo clippy --locked --no-default-features --features kms --all-targets -- -D warnings"
+
+[tasks.test-kms]
+description = "テスト（LinuxKMS 構成。Linux 上でのみ実行可能）"
+run = "cargo test --locked --no-default-features --features kms"
+
 # ───────────── ビルド・配布 ─────────────
+# リリースビルドは scripts/release-flags.sh を読み込み、バイナリに
+# ビルドしたマシンの絶対パス（ユーザー名を含む）が入らないようにする。
+# 素の `cargo build --release` ではパスが入るので、配布物は必ずこれらのタスクで作る。
 
 [tasks.release]
-description = "リリースビルド（このマシン向け、desktop バックエンド）"
-run = "cargo build --release"
+description = "リリースビルド（このマシン向け、desktop バックエンド。パスを除去）"
+run = """
+. scripts/release-flags.sh
+cargo build --release --locked
+"""
 
 [tasks.build-kms]
-description = "Linux 実機向けビルド（LinuxKMS）。Linux 上でのみ実行可能"
-run = "cargo build --release --no-default-features --features kms"
+description = "Linux 実機向けリリースビルド（LinuxKMS。パスを除去）。Linux 上でのみ実行可能"
+run = """
+. scripts/release-flags.sh
+cargo build --release --locked --no-default-features --features kms
+"""
+
+[tasks.check-paths]
+description = "リリースバイナリにビルドしたマシンの絶対パスが含まれていないことを確認"
+run = """
+bin=target/release/home-display
+. scripts/release-flags.sh
+found=$(strings -a "$bin" | grep -F -e "$HOME/" -e "$cargo_home/" -e "$rustup_home/" -e "$project_root/" || true)
+if [ -n "$found" ]; then
+  echo "NG: $(printf '%s\n' "$found" | wc -l | tr -d ' ') strings contain build-machine paths:"
+  printf '%s\n' "$found" | head -20
+  exit 1
+fi
+echo "OK: no build-machine paths in $bin"
+"""
 
 [tasks.deb]
 description = "Linux 上で .deb を作成（target/debian/）"
 depends = ["build-kms"]
 run = """
-command -v cargo-deb >/dev/null || cargo install cargo-deb --locked --version "=3.8.0"
-cargo deb --no-build --no-strip
+# cargo-deb is pinned; reinstall when a different version is present.
+if [ "$(cargo deb --version 2>/dev/null)" != "cargo-deb 3.8.0" ]; then
+  cargo install cargo-deb --locked --version "=3.8.0"
+fi
+cargo deb --locked --no-build --no-strip
 """

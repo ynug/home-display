@@ -52,6 +52,13 @@ pub struct Report {
 }
 
 /// An Atom feed entry: (title, telegram URL).
+/// Telegram links in the feed are only followed to JMA's own host.
+const JMA_TELEGRAM_PREFIX: &str = "https://www.data.jma.go.jp/";
+
+fn is_jma_telegram_url(url: &str) -> bool {
+    url.starts_with(JMA_TELEGRAM_PREFIX) && !url.contains("..")
+}
+
 pub fn parse_feed(xml: &str) -> Result<Vec<(String, String)>, SourceError> {
     let doc = Document::parse(xml).map_err(|e| SourceError::parse(format!("気象庁フィード: {e}")))?;
     let mut out = Vec::new();
@@ -257,7 +264,7 @@ pub async fn fetch(ctx: &Context, state: &tokio::sync::Mutex<JmaState>) -> Resul
     let feed = ctx.http.get_text(feed_url, 8 * 1024 * 1024).await?;
     let entries: Vec<(String, String)> = parse_feed(&feed)?
         .into_iter()
-        .filter(|(title, _)| TITLES.contains(&title.as_str()))
+        .filter(|(title, url)| TITLES.contains(&title.as_str()) && is_jma_telegram_url(url))
         .collect();
 
     // Feeds list newest first; download only unseen telegrams.
@@ -296,6 +303,19 @@ pub async fn fetch(ctx: &Context, state: &tokio::sync::Mutex<JmaState>) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn telegrams_only_from_jma() {
+        assert!(is_jma_telegram_url(
+            "https://www.data.jma.go.jp/developer/xml/data/x_VXSE53.xml"
+        ));
+        assert!(!is_jma_telegram_url(
+            "http://www.data.jma.go.jp/developer/xml/data/x.xml"
+        ));
+        assert!(!is_jma_telegram_url("https://www.data.jma.go.jp.evil.example/x.xml"));
+        assert!(!is_jma_telegram_url("https://example/ash.xml"));
+        assert!(!is_jma_telegram_url("https://www.data.jma.go.jp/../x.xml"));
+    }
 
     const VXSE53: &str = include_str!("../../fixtures/earthquake/jma/VXSE53_sample.xml");
     const VXSE51: &str = include_str!("../../fixtures/earthquake/jma/VXSE51_sample.xml");
