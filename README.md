@@ -6,6 +6,25 @@
 > Raspberry Pi などの Linux 実機での動作はまだ確認していません（[検証状況](#検証状況)）。\
 > ライセンスは MIT です。
 
+## Raspberry Pi へのインストール
+
+Raspberry Pi OS Lite（64-bit）の Raspberry Pi 上で、次の 1 行を実行します。
+
+```sh
+curl -fsSL https://github.com/ynug/home-display/releases/latest/download/install-raspberry-pi.sh | sudo bash
+```
+
+最新の Release から `.deb` を取得してインストールし、iCal URL・地点・室内センサーを質問に答えて設定したうえで、
+自動起動まで行います。
+
+**更新**も同じコマンドです（設定は保持されます）。質問なしで、設定を変えずに最新版へ更新するには:
+
+```sh
+curl -fsSL https://github.com/ynug/home-display/releases/latest/download/install-raspberry-pi.sh | sudo bash -s -- --yes
+```
+
+詳しくは [docs/raspberry-pi.md](docs/raspberry-pi.md) を参照してください。
+
 ## 本プロジェクトについて
 
 <!-- ここから作者の自由入力欄 -->
@@ -55,7 +74,7 @@ Electron / WebView / HTML / JavaScript は使っていません。
 >   出典: 気象庁「高解像度降水ナウキャスト」を加工、地図: 地理院タイル（白地図）を加工。
 > - Overview / 設定画面は **fixture（サンプルデータ）** をソフトウェアレンダラーで描画したもので、
 >   画面上にも「サンプルデータ表示中」「デモ用の時刻を表示中」と表示されます。
-> - 設定画面の「UI上書き設定」「キャッシュ」の欄は、開発機のフォルダの場所が写るため塗りつぶしています。
+> - 設定画面の「画面の保存先」「キャッシュ」の欄は、開発機のフォルダの場所が写るため塗りつぶしています。
 
 ## 主な機能
 
@@ -65,8 +84,10 @@ Electron / WebView / HTML / JavaScript は使っていません。
 - **Radar** — 気象庁の雨雲を画面の主役に。**過去 1 時間の実測 → 現在 → 1 時間先までの予測** をアニメーション。
   予測は紫のタイムラインと「予測」バッジで実測と区別。現在地マーカー、気象庁の雨量凡例（mm/h）、出典表示。
   読み込み中（進捗 %）・取得失敗・データなし・古いデータ・代替データ表示を区別
-- **設定・診断** — 表示プロファイル、自動切り替え、表示時間、地図の縮尺、**地点（緯度・経度）** を画面上で変更・保存。
-  データソースの状態・最終成功・次回取得・直近エラー、設定ファイルの場所、最近の警告ログ、Radar のメモリ使用量
+- **設定・診断** — 表示プロファイル、自動切り替え、表示時間、地図の縮尺を**キーボードで**変更・保存。
+  現在の地点、データソースの状態・最終成功・次回取得・直近エラー、設定ファイルの場所、最近の警告ログ、Radar のメモリ使用量
+- **室内センサー（I2C）** — 温度・湿度・CO2・気圧を Raspberry Pi の I2C から直接読み、天気カードに表示
+  （CO2 は 1000 / 1500 ppm で注意色・警告色）。[docs/sensors.md](docs/sensors.md)。サンプルデータでは見本の値を表示
 - **自動ローテーション** — Overview 20 秒 ↔ Radar **自動**（アニメーション 2 周分 ≒ 18.5 秒、静止画は 10 秒）。
   雨雲の初回取得が終わるまでは Radar に切り替えず、進捗（%・コマ数）を 1 秒ごとに表示
 - **表示プロファイル** — Full / Balanced / Low（端末の性能に合わせて雨雲のコマ数・装飾を調整）
@@ -121,18 +142,19 @@ cargo run -- --profile low                               # プロファイルを
 cargo run -- --check-config                              # 設定の検証（実際に使われる値を表示）
 ```
 
-### キー操作 / タッチ
+### キー操作
 
 | キー | 動作 |
 |---|---|
 | `1` / `2` | Overview / Radar |
 | `S`（`F2`） | 設定・診断画面の開閉 |
-| `←` `→`、画面タップ | 画面を切り替え |
+| `←` `→` | 画面を切り替え |
 | `Space` | 自動切り替えの一時停止 / 再開 |
 | `U`（`F5`） | 全データを再取得（同じデータは 15 秒以上空けて実行） |
 | `Esc` | Overview に戻る |
+| `Ctrl+Q` | 終了（サービスとして動いている場合も再起動せず、tty1 にログイン画面を出す） |
 
-設定画面では次のキー（またはボタン）が使えます。
+設定画面では次のキーが使えます（ボタンはなく、キーボードだけで操作します）。
 
 | キー | 動作 |
 |---|---|
@@ -141,10 +163,9 @@ cargo run -- --check-config                              # 設定の検証（実
 | `[` `]` | Overview の表示時間 −/+ 5 秒 |
 | `-` `=` / `0` | Radar の表示時間 −/+ 5 秒 / 自動に戻す |
 | `,` `.` | 地図の縮尺 −/+（5〜11。変更すると雨雲を取り直し） |
-| 「地点」カードの「適用」 | 地点名・座標・雨雲の中心を反映（天気と雨雲を取り直し） |
 | `W` | 保存（再起動後も維持） |
 
-右上隅の長押し（1.2 秒）でも設定画面を開けます。設定画面は 120 秒操作がないと Overview に戻ります。
+マウス・タッチ操作は無効です（キーボードだけで操作します）。設定画面は `S` / `Esc` で閉じ、120 秒操作がないと Overview に戻ります。
 入力機器がない端末では自動ローテーションのみで運用できます。
 
 ### ヘッドレスのスクリーンショット
@@ -163,13 +184,17 @@ cargo run --release -- --config packaging/config/config.toml --screen radar \
 ## 設定
 
 設定の優先順位は **コマンドライン > 設定画面で保存した値 > config.toml > 既定値** です。
+地点とカレンダーは config.toml（と iCal URL のファイル）だけで設定します。
 環境変数で読むのは **カレンダーの秘密 URL（`HOME_DISPLAY_ICAL_URL`）だけ** です。
 
 ### 設定画面で保存（おすすめ）
 
-`S` で設定画面を開き、プロファイル・自動切り替え・表示時間・地図の縮尺・地点を変えて `W` で保存します。
+`S` で設定画面を開き、プロファイル・自動切り替え・表示時間・地図の縮尺を変えて `W` で保存します。
 保存先は `<state dir>/ui-overrides.toml`（Linux の systemd 下では `/var/lib/home-display/`）で、
 再起動や `.deb` の更新でも消えません（`apt purge` 時のみ削除）。管理者が管理する config.toml は書き換えません。
+SSH から直接編集することもできます（使えるキー: `profile`（`"full"` / `"balanced"` / `"low"`）、`rotation_enabled`、
+`overview_seconds`、`radar_seconds`（`0` = 自動）、`radar_zoom`）。知らないキーや書式の誤りがあるとファイル全体が無視され、
+実行中のアプリは変更を検知しないので、編集後は再起動してください。
 
 ### 設定ファイル
 
@@ -196,22 +221,8 @@ URL はログ・エラーメッセージ・診断画面に出力されません�
 
 ### 地点
 
-設定画面の「地点」カードに、地点名と「緯度, 経度」を入力して「適用」します（検索機能はありません）。
+config.toml の `[location]` に地点名と緯度・経度を書き、再起動します（検索機能はありません）。
 Google マップで地点を右クリックすると、先頭に「35.6812, 139.7671」の形式で座標が表示され、クリックでコピーできます。
-
-- 天気はこの地点で取得し、雨雲レーダーもこの地点を中心に表示します。
-- 「雨雲の中心」に別の座標を入れると、雨雲だけ別の場所を中心にできます（空欄なら地点と同じ）。
-- 適用するとその場で天気と雨雲を取り直します。古い地点のデータは表示しません。
-- 全角数字・全角カンマも受け付けます。日本の範囲外の座標では雨雲・地図が表示されない旨を表示します。
-- config.toml の `[location]`（`name` / `latitude` / `longitude` / `timezone`）でも設定できます。タイムゾーンは config.toml のみです。
-
-#### マウスなし・SSH から設定する（Linux / Raspberry Pi）
-
-設定画面の入力欄はクリックかタップで選ぶため、**キーボードだけでは入力できません**（Tab で移動できません）。
-また LinuxKMS には日本語入力（IME）がないので、画面上では「札幌」のような日本語の地点名を打てません。
-マウスやタッチパネルを使わない場合は、SSH でファイルを編集して再起動します（日本語も書けます）。
-
-**方法 1: config.toml（設定画面で地点を保存したことがない場合）**
 
 ```sh
 sudo nano /etc/home-display/config.toml
@@ -219,33 +230,19 @@ sudo nano /etc/home-display/config.toml
 #   name = "札幌"
 #   latitude = 43.0621
 #   longitude = 141.3544
+#   timezone = "Asia/Tokyo"
 sudo systemctl restart home-display
 ```
 
-**方法 2: ui-overrides.toml（設定画面で一度でも保存した場合はこちら）**
+- 天気はこの地点で取得し、雨雲レーダーもこの地点を中心に表示します。
+- 雨雲だけ別の場所を中心にするときは、`[radar]` に `latitude` / `longitude`（と表示名 `center_name`）を書きます。
+- Raspberry Pi ではインストールスクリプト（`install-raspberry-pi.sh`）を再実行して質問に答えても設定できます（config.toml を書き換えます）。
+- 現在の地点は設定画面の「設定ファイル」カードで確認できます。
 
-設定画面で保存した値は config.toml より優先されます。`/var/lib/home-display/ui-overrides.toml` に
-`location` があると、config.toml の `[location]` を書き換えても反映されません。
-その場合はこのファイルを直接編集します（無ければ新規作成。書いた項目だけが上書きされます）。
+以前の版で設定画面から保存した地点（`ui-overrides.toml` の `location_name` / `location` / `radar_center` /
+`radar_center_name`）は**使われなくなりました**（起動時にログに警告が出ます）。
+インストールスクリプトを再実行すると config.toml に移します。手で移す場合は上の `[location]` に書いてください。
 
-```sh
-sudo nano /var/lib/home-display/ui-overrides.toml
-#   location_name = "札幌"
-#   location = "43.0621, 141.3544"      # 「緯度, 経度」の文字列
-#   radar_center = ""                    # 任意。空なら地点と同じ。別の場所なら "43.0, 141.0"
-#   radar_center_name = ""               # 任意。雨雲の中心の表示名
-#   radar_zoom = 8                       # 任意。地図の縮尺 5〜11
-sudo systemctl restart home-display
-```
-
-- 使えるキー: `profile`（`"full"` / `"balanced"` / `"low"`）、`rotation_enabled`、`overview_seconds`、
-  `radar_seconds`（`0` = 自動）、`radar_zoom`、`location_name`、`location`、`radar_center`、`radar_center_name`。
-- **知らないキーや書式の誤りがあると、ファイル全体が無視されます**（ログに `ignoring invalid ...` と警告が出ます）。
-  再起動後に `journalctl -u home-display -n 50` で確認してください。
-- 座標の書式が正しくない `location` は無視され、config.toml の値が使われます。
-- 地点を config.toml で管理したい場合は、ui-overrides.toml から `location_name` / `location` の行を消します。
-- 実行中のアプリはこのファイルの変更を検知しないので、**編集後は再起動が必要**です。
-  また、画面で `W` を押して保存するとファイルは画面上の値で丸ごと書き直されます。
 
 ### 環境変数
 
@@ -305,7 +302,8 @@ FPS やメモリの数値は**実機で計測していない目安**です。128
 ## Linux / Raspberry Pi へのデプロイ
 
 **Raspberry Pi は [docs/raspberry-pi.md](docs/raspberry-pi.md) の手順で、インストールスクリプト
-（[`packaging/raspberry-pi/install.sh`](packaging/raspberry-pi/install.sh)）を使うのが簡単です。**
+（[`packaging/raspberry-pi/install-raspberry-pi.sh`](packaging/raspberry-pi/install-raspberry-pi.sh)）を使うのが簡単です。**
+Release の URL を指定するだけでインストールできます: `curl -fsSL https://github.com/ynug/home-display/releases/latest/download/install-raspberry-pi.sh | sudo bash`
 Release から `.deb` を取得し、iCal URL・地点の入力、自動起動の設定まで行います。以下は手動で入れる場合です。
 
 GitHub Actions がビルドした `.deb`（amd64 / arm64）を使います。どのプロファイルでも同じパッケージです。
@@ -314,7 +312,7 @@ GitHub Actions がビルドした `.deb`（amd64 / arm64）を使います。ど
 sudo apt update
 sudo apt install ./home-display_*_arm64.deb
 sudo nano /etc/home-display/home-display.env     # HOME_DISPLAY_ICAL_URL を記入（0600）
-sudo nano /etc/home-display/config.toml          # 地点・プロファイルなど（任意。設定画面でも可）
+sudo nano /etc/home-display/config.toml          # 地点・プロファイルなど（プロファイル等は設定画面でも可）
 sudo systemctl start home-display
 journalctl -u home-display -f
 ```
@@ -354,7 +352,7 @@ mise run check-paths  # バイナリにビルドしたマシンの絶対パス�
 - リリースビルドは `--remap-path-prefix` 等でビルドしたマシンの絶対パスを除去し（[`scripts/release-flags.sh`](scripts/release-flags.sh)）、
   CI で残っていないことを検査。素の `cargo build --release` では除去されないので、配布物は mise のタスクで作ります
 - リリースプロファイルは `lto = "fat"`・`codegen-units = 1`（macOS 実測でバイナリ 31.2 MB → 24.4 MB。ビルドは遅くなる）
-- `v*` タグを push すると GitHub Release に `.deb`（`home-display_<版>_<arch>.deb`）と Raspberry Pi 用の `install.sh` を添付。
+- `v*` タグを push すると GitHub Release に `.deb`（`home-display_<版>_<arch>.deb`）と Raspberry Pi 用の `install-raspberry-pi.sh`（リポジトリ名を埋め込んだもの）を添付。
   タグは `v` + `Cargo.toml` の `version`（例: `v0.0.3`）で、一致しないと CI が失敗
 
 ## アーキテクチャ
@@ -402,9 +400,11 @@ mise run check    # = cargo fmt --check → cargo clippy --all-targets -D warnin
 | Linux amd64 / arm64 ビルド・`.deb` 生成（GitHub Actions） | ✅ 成功 |
 | Raspberry Pi 4: `.deb` のインストール・systemd での起動・LinuxKMS（GPU）での表示 | ✅ 確認済み（v0.0.3。EGL / GLES のライブラリを手動で追加する必要があった → v0.0.4 で `.deb` の依存に追加） |
 | v0.0.4 の `.deb` だけで追加作業なしに起動すること | ⏳ 未確認 |
-| libinput（キー・タッチ）・CPU 描画（`linuxkms-software`）・720p など他の解像度 | ⏳ **未検証**（[手順](docs/linux-kms.md)） |
+| libinput（キー入力）・CPU 描画（`linuxkms-software`）・720p など他の解像度 | ⏳ **未検証**（[手順](docs/linux-kms.md)） |
 | Raspberry Pi での性能・長時間稼働 | ⏳ **未検証** |
-| Raspberry Pi 用インストールスクリプト（`install.sh`） | ⏳ **未検証**（構文チェックのみ。実機・Release からのダウンロードは未実行） |
+| Raspberry Pi 用インストールスクリプト（`install-raspberry-pi.sh`） | ⏳ **未検証**（構文チェックのみ。実機・Release からのダウンロードは未実行） |
+| 室内センサー: ドライバー（偽の I2C での単体テスト）・サンプル値の表示（Overview / Radar / 設定画面） | ✅ 確認済み（macOS） |
+| 室内センサー: Raspberry Pi 実機・センサー基板での読み取り、`install-raspberry-pi.sh` の I2C 有効化・権限 | ⏳ **未検証**（基板は製造中） |
 | 日付が変わった直後の予定の取り直し | ⚠️ 待ち時間の計算は単体テストで確認。実際に 0 時をまたぐ動作は未確認 |
 
 ## ライセンス

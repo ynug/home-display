@@ -1,5 +1,5 @@
 import { Theme } from "theme.slint";
-import { Health } from "types.slint";
+import { Health, IndoorItem, IndoorView } from "types.slint";
 
 export component Card inherits Rectangle {
     in property <color> outline: Theme.hairline;
@@ -133,4 +133,73 @@ export component Button inherits Rectangle {
     touch := TouchArea {
         clicked => { root.clicked(); }
     }
+}
+
+// ───────────── Indoor sensors ─────────────
+
+// One indoor value: label above, value + unit below. CO2 turns caution /
+// warning coloured; values past their freshness limit are dimmed.
+export component IndoorCell inherits VerticalLayout {
+    in property <IndoorItem> item;
+    in property <length> value-size: 34px;
+    spacing: 2px;
+    opacity: root.item.dim ? 0.45 : 1.0;
+    Text { text: root.item.label; font-size: 17px; color: Theme.text-tertiary; }
+    HorizontalLayout {
+        spacing: 6px;
+        alignment: start;
+        Text {
+            text: root.item.value;
+            font-size: root.value-size;
+            font-weight: 500;
+            color: root.item.level == 2 ? Theme.danger : root.item.level == 1 ? Theme.warn : Theme.text-primary;
+            vertical-alignment: bottom;
+        }
+        Text {
+            text: root.item.unit;
+            font-size: 18px;
+            color: Theme.text-tertiary;
+            vertical-alignment: bottom;
+        }
+    }
+}
+
+// Radar screen: "室内" with up to four values in a 2×2 grid.
+export component IndoorGrid inherits VerticalLayout {
+    in property <IndoorView> data;
+    spacing: 10px;
+    Text { text: "室内"; font-size: 18px; font-weight: 600; color: Theme.text-tertiary; }
+    HorizontalLayout {
+        spacing: 16px;
+        IndoorCell { item: root.data.items[0]; horizontal-stretch: 1; }
+        if root.data.items.length > 1: IndoorCell { item: root.data.items[1]; horizontal-stretch: 1; }
+    }
+    if root.data.items.length > 2: HorizontalLayout {
+        spacing: 16px;
+        IndoorCell { item: root.data.items[2]; horizontal-stretch: 1; }
+        if root.data.items.length > 3: IndoorCell { item: root.data.items[3]; horizontal-stretch: 1; }
+        if root.data.items.length == 3: Rectangle { horizontal-stretch: 1; }
+    }
+}
+
+// Overview: one row "室内  温度 23.4℃  湿度 46%  CO2 820ppm  気圧 1013hPa".
+export component IndoorRow inherits HorizontalLayout {
+    in property <IndoorView> data;
+    spacing: 22px;
+    height: 34px;
+    Text { text: "室内"; font-size: 19px; font-weight: 600; color: Theme.text-tertiary; vertical-alignment: center; }
+    for item in root.data.items: HorizontalLayout {
+        spacing: 6px;
+        opacity: item.dim ? 0.45 : 1.0;
+        Text { text: item.label; font-size: 17px; color: Theme.text-tertiary; vertical-alignment: center; }
+        Text {
+            text: item.value;
+            font-size: 26px;
+            font-weight: 500;
+            color: item.level == 2 ? Theme.danger : item.level == 1 ? Theme.warn : Theme.text-primary;
+            vertical-alignment: center;
+        }
+        Text { text: item.unit; font-size: 16px; color: Theme.text-tertiary; vertical-alignment: center; }
+    }
+    Rectangle { horizontal-stretch: 1; }
 }

@@ -6,8 +6,18 @@ if [ "$1" = "configure" ]; then
         adduser --system --group --no-create-home --home /var/lib/home-display \
             --gecos "Home Display" home-display
     fi
-    # DRM/KMS output and libinput need these groups (no root required).
-    for g in video render input; do
+    # Indoor sensors: /dev/i2c-* belongs to "i2c" (Raspberry Pi OS creates it;
+    # elsewhere our udev rule assigns it). The unit lists it in
+    # SupplementaryGroups=, so it must exist or the service cannot start.
+    if ! getent group i2c >/dev/null; then
+        addgroup --system i2c >/dev/null
+    fi
+    if command -v udevadm >/dev/null; then
+        udevadm control --reload-rules 2>/dev/null || true
+        udevadm trigger --subsystem-match=i2c-dev 2>/dev/null || true
+    fi
+    # DRM/KMS output, libinput and I2C need these groups (no root required).
+    for g in video render input i2c; do
         if getent group "$g" >/dev/null; then
             adduser home-display "$g" >/dev/null 2>&1 || true
         fi

@@ -4,7 +4,7 @@ import { RadarScreen } from "radar.slint";
 import { SettingsScreen } from "settings.slint";
 import {
     ScreenKind, HeaderData, ClockData, CalendarView, WeatherView, QuakeView,
-    FooterView, RadarView, SettingsView, Health, PanelState,
+    FooterView, RadarView, SettingsView, Health, PanelState, IndoorView,
 } from "types.slint";
 
 export { Theme }
@@ -32,19 +32,15 @@ export component MainWindow inherits Window {
     in property <ClockData> clock;
     in property <CalendarView> calendar;
     in property <WeatherView> weather;
+    in property <IndoorView> indoor;
     in property <QuakeView> quake;
     in property <FooterView> footer;
     in property <RadarView> radar;
     in property <[image]> radar-frames;
     in property <int> radar-frame-ms: 700;
     in property <SettingsView> settings;
-    // Location form on the settings screen.
-    in-out property <string> edit-location-name;
-    in-out property <string> edit-location-coords;
-    in-out property <string> edit-radar-coords;
-    in-out property <string> edit-radar-name;
 
-    // Every user input (keys, buttons, hot corner) funnels into one callback so
+    // Every key press funnels into one callback so
     // that Rust's ScreenManager remains the single owner of navigation state.
     callback action(string);
 
@@ -57,6 +53,7 @@ export component MainWindow inherits Window {
         clock: root.clock;
         calendar: root.calendar;
         weather: root.weather;
+        indoor: root.indoor;
         quake: root.quake;
         footer: root.footer;
     }
@@ -65,6 +62,7 @@ export component MainWindow inherits Window {
         header: root.header;
         clock: root.clock;
         weather: root.weather;
+        indoor: root.indoor;
         radar: root.radar;
         frames: root.radar-frames;
         frame-ms: root.radar-frame-ms;
@@ -72,16 +70,13 @@ export component MainWindow inherits Window {
 
     if root.screen == ScreenKind.settings: SettingsScreen {
         data: root.settings;
-        location-name <=> root.edit-location-name;
-        location-coords <=> root.edit-location-coords;
-        radar-coords <=> root.edit-radar-coords;
-        radar-name <=> root.edit-radar-name;
-        action(a) => { root.action(a); }
     }
 
-    // Keyboard input. Also used for the settings screen on devices with a keyboard.
+    // Keyboard input: the only way to change settings.
     keys := FocusScope {
         key-pressed(event) => {
+            // Ctrl+Q quits (KMS may report the control character U+0011 instead of "q").
+            if (event.modifiers.control && (event.text.to-lowercase() == "q" || event.text == "\u{11}")) { root.action("quit"); return accept; }
             if (event.text == Key.Escape) { root.action("key:escape"); return accept; }
             if (event.text == Key.F2) { root.action("key:s"); return accept; }
             if (event.text == Key.F5) { root.action("key:u"); return accept; }
@@ -93,35 +88,11 @@ export component MainWindow inherits Window {
         }
     }
 
-    // Touch / mouse: a long press in the top-right corner opens settings,
-    // a tap elsewhere on Overview/Radar advances to the next screen.
-    if root.screen != ScreenKind.settings: TouchArea {
-        clicked => { root.action("tap"); }
-    }
-    if root.screen != ScreenKind.settings: TouchArea {
-        x: parent.width - 160px;
-        y: 0px;
-        width: 160px;
-        height: 140px;
-        property <bool> armed: false;
-        pointer-event(ev) => {
-            if (ev.kind == PointerEventKind.down) {
-                hold.running = true;
-            } else if (ev.kind == PointerEventKind.up || ev.kind == PointerEventKind.cancel) {
-                hold.running = false;
-            }
-        }
-        hold := Timer {
-            interval: 1200ms;
-            running: false;
-            triggered => {
-                self.running = false;
-                root.action("open-settings");
-            }
-        }
+    // Mouse / touch input is disabled: the display runs with a keyboard only.
+    // This area swallows pointer events and hides the cursor.
+    TouchArea {
+        mouse-cursor: none;
     }
 
     init => { keys.focus(); }
-    // Text fields take the keyboard focus; give it back when leaving settings.
-    changed screen => { keys.focus(); }
 }

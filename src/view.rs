@@ -5,9 +5,10 @@
 use chrono::{DateTime, Datelike, Days, Duration, NaiveDate, Timelike, Utc};
 use chrono_tz::Tz;
 
-use crate::config::{AppConfig, Profile, ProfileSettings};
+use crate::config::{AppConfig, Profile, ProfileSettings, Quantity, SensorsConfig};
 use crate::model::{CalendarEvent, WeatherKind};
 use crate::repository::Snapshot;
+use crate::sensors;
 use crate::services::{calendar::local_midnight, earthquake, weather};
 use crate::status::{Health, Origin, SourceId, SourceStatus};
 
@@ -240,6 +241,8 @@ pub struct SettingsView {
     /// e.g. "9 · 約340km" (map width).
     pub radar_zoom_text: String,
     pub mode_text: String,
+    /// Current location (read-only; set in config.toml).
+    pub location_text: String,
     pub config_path: String,
     pub overrides_path: String,
     pub cache_dir: String,
@@ -249,7 +252,107 @@ pub struct SettingsView {
     /// Calendar (iCal) status line.
     pub ical_text: String,
     pub sources: Vec<DiagRowView>,
+    /// One row per configured sensor (all measured values, address, error).
+    pub sensors: Vec<DiagRowView>,
     pub logs: Vec<String>,
+}
+
+/// Indoor sensor values shown in the weather cards (`[sensors.display]` order:
+/// temperature, humidity, CO2, pressure). Empty = no sensors configured.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct IndoorView {
+    pub items: Vec<IndoorItem>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct IndoorItem {
+    pub label: String,
+    /// "23.4"; "--" before the first reading.
+    pub value: String,
+    pub unit: String,
+    /// 0 = normal, 1 = caution, 2 = warning (CO2 only).
+    pub level: i32,
+    /// Older than `stale_seconds`.
+    pub dim: bool,
+}
+
+/// Settings screen: every configured sensor with all its values.
+pub fn sensor_rows(state: &sensors::State, sample: bool, now: DateTime<Tz>) -> Vec<DiagRowView> {
+    state
+        .devices
+        .iter()
+        .map(|d| {
+            let health = match (&d.error, d.measured_at, sample) {
+                (_, Some(_), true) => Health::Sample,
+                (None, Some(_), _) => Health::Ok,
+                (Some(_), Some(_), _) => Health::Retrying,
+                (Some(_), None, _) => Health::Error,
+                (None, None, _) => Health::Loading,
+            };
+            DiagRowView {
+                name: d.id.clone(),
+                health,
+                origin: format!("{} · 0x{:02X}", d.model.name(), d.address),
+                last_success: d
+                    .measured_at
+                    .map(|t| hm_utc(t, now.timezone()))
+                    .unwrap_or_else(|| "—".into()),
+                // Short form in the model's own order, e.g. "820ppm · 25.0℃ · 42%".
+                next: if d.measured_at.is_some() {
+                    d.model
+                        .quantities()
+                        .iter()
+                        .filter_map(|&q| {
+                            let v = d.values.get(q)?;
+                            Some(match q {
+                                Quantity::Temperature | Quantity::Pressure => format!("{v:.1}{}", q.unit()),
+                                _ => format!("{v:.0}{}", q.unit()),
+                            })
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" · ")
+                } else {
+                    "--".into()
+                },
+                error: d.error.clone().unwrap_or_default(),
+            }
+        })
+        .collect()
+}
+
+pub fn indoor(cfg: Option<&SensorsConfig>, state: &sensors::State, now: DateTime<Utc>) -> IndoorView {
+    let Some(cfg) = cfg else { return IndoorView::default() };
+    let items = Quantity::ALL
+        .iter()
+        .filter_map(|&q| {
+            let dev = state.device(cfg.display.source(q)?);
+            let reading = dev.and_then(|d| Some((d.values.get(q)?, d.measured_at?)));
+            let (value, level, dim) = match reading {
+                Some((v, at)) => {
+                    let level = match q {
+                        Quantity::Co2 if v >= cfg.co2_warning_ppm as f32 => 2,
+                        Quantity::Co2 if v >= cfg.co2_caution_ppm as f32 => 1,
+                        _ => 0,
+                    };
+                    let text = match q {
+                        Quantity::Temperature => format!("{v:.1}"),
+                        _ => format!("{v:.0}"),
+                    };
+                    let dim = now - at > Duration::seconds(cfg.stale_seconds as i64);
+                    (text, level, dim)
+                }
+                None => ("--".to_string(), 0, false),
+            };
+            Some(IndoorItem {
+                label: q.label().into(),
+                value,
+                unit: q.unit().into(),
+                level,
+                dim,
+            })
+        })
+        .collect();
+    IndoorView { items }
 }
 
 // ───────────────────────────── formatting helpers ─────────────────────────────
@@ -1028,6 +1131,53 @@ mod tests {
     use chrono::TimeZone;
     use std::sync::Arc;
 
+    #[test]
+    fn indoor_values_levels_and_staleness() {
+        let cfg = SensorsConfig::standard();
+        let shared = sensors::Shared::new(Some(&cfg));
+        let now = Utc.with_ymd_and_hms(2026, 10, 11, 1, 40, 0).unwrap();
+        assert!(
+            indoor(None, &shared.snapshot(), now).items.is_empty(),
+            "off without [sensors]"
+        );
+
+        // Before the first reading every configured value shows "--".
+        let v = indoor(Some(&cfg), &shared.snapshot(), now);
+        let labels: Vec<_> = v.items.iter().map(|i| i.label.as_str()).collect();
+        assert_eq!(labels, ["温度", "湿度", "CO2", "気圧"]);
+        assert!(v.items.iter().all(|i| i.value == "--" && !i.dim));
+
+        let sample = |m| crate::fixtures::sensor_values(Scenario::Rain, m);
+        shared.set("room", sample(crate::config::SensorModel::Sht35), now);
+        shared.set("co2", sample(crate::config::SensorModel::Scd41), now);
+        shared.set(
+            "baro",
+            sample(crate::config::SensorModel::Bmp581),
+            now - Duration::minutes(5),
+        );
+        let v = indoor(Some(&cfg), &shared.snapshot(), now);
+        let by = |l: &str| v.items.iter().find(|i| i.label == l).unwrap().clone();
+        assert_eq!(
+            (by("温度").value, by("温度").unit),
+            ("22.1".to_string(), "℃".to_string())
+        );
+        assert_eq!(by("湿度").value, "68");
+        assert_eq!((by("CO2").value, by("CO2").level), ("1650".to_string(), 2));
+        assert!(by("気圧").dim, "5 min old > stale_seconds 60");
+        assert!(!by("温度").dim);
+
+        shared.set(
+            "co2",
+            sensors::Values {
+                co2: Some(1200.0),
+                ..Default::default()
+            },
+            now,
+        );
+        let v = indoor(Some(&cfg), &shared.snapshot(), now);
+        assert_eq!(v.items.iter().find(|i| i.label == "CO2").unwrap().level, 1);
+    }
+
     const TZ: Tz = chrono_tz::Asia::Tokyo;
 
     fn now() -> DateTime<Tz> {
@@ -1037,7 +1187,8 @@ mod tests {
     fn snapshot(scenario: Scenario) -> Snapshot {
         let repo = Repository::new(Snapshot::default());
         let t = now().with_timezone(&Utc);
-        for id in SourceId::ALL {
+        // Sensors are only registered when `[sensors]` is configured.
+        for id in SourceId::ALL.into_iter().filter(|id| *id != SourceId::Sensors) {
             repo.set_status(id, SourceStatus::new(Origin::Fixture, Duration::minutes(60)));
         }
         let set = FixtureSet::load(scenario, now());

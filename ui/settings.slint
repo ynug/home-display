@@ -1,76 +1,76 @@
-import { LineEdit } from "std-widgets.slint";
 import { Theme } from "theme.slint";
-import { Card, StatusDot, Pill, SectionTitle, Divider, Button } from "components.slint";
+import { Card, StatusDot, Pill, SectionTitle, Divider } from "components.slint";
 import { SettingsView, DiagRow, Health } from "types.slint";
 
+// Keyboard key label, e.g. [P].
+component KeyCap inherits Rectangle {
+    in property <string> text;
+    height: 34px;
+    width: max(34px, label.preferred-width + 18px);
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: Theme.hairline;
+    background: Theme.surface-sunken;
+    label := Text {
+        text: root.text;
+        font-size: 18px;
+        font-weight: 600;
+        color: Theme.text-secondary;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// One setting: label, current value, and the keys that change it.
 component Row inherits HorizontalLayout {
     in property <string> label;
-    height: 58px;
-    spacing: 16px;
+    in property <string> value;
+    in property <string> hint;
+    height: 52px;
+    spacing: 12px;
     Text {
         text: root.label;
-        width: 262px;
+        width: 230px;
         font-size: 21px;
         color: Theme.text-secondary;
         vertical-alignment: center;
     }
-    @children
-}
-
-component Stepper inherits HorizontalLayout {
-    in property <int> value;
-    in property <string> unit: "秒";
-    // Shown instead of the number when set (e.g. "自動 19秒").
-    in property <string> display;
-    in property <length> value-width: 136px;
-    callback dec;
-    callback inc;
-    spacing: 12px;
-    Button { text: "−"; width: 64px; clicked => { root.dec(); } }
     Text {
-        text: root.display != "" ? root.display : root.value + " " + root.unit;
-        width: root.value-width;
-        font-size: 26px;
+        text: root.value;
+        width: 200px;
+        font-size: 24px;
         font-weight: 600;
         color: Theme.text-primary;
-        horizontal-alignment: center;
         vertical-alignment: center;
     }
-    Button { text: "+"; width: 64px; clicked => { root.inc(); } }
+    @children
+    Rectangle { horizontal-stretch: 1; }
+    if root.hint != "": Text {
+        text: root.hint;
+        font-size: 16px;
+        color: Theme.text-tertiary;
+        vertical-alignment: center;
+    }
+}
+
+component KeyHelp inherits HorizontalLayout {
+    in property <string> key;
+    in property <string> label;
+    spacing: 10px;
+    VerticalLayout { alignment: center; KeyCap { text: root.key; } }
+    Text { text: root.label; font-size: 18px; color: Theme.text-secondary; vertical-alignment: center; }
 }
 
 component KV inherits HorizontalLayout {
     in property <string> key;
     in property <string> value;
     spacing: 16px;
-    Text { text: root.key; width: 170px; font-size: 18px; color: Theme.text-tertiary; }
+    Text { text: root.key; width: 150px; font-size: 18px; color: Theme.text-tertiary; }
     Text { text: root.value; font-size: 18px; color: Theme.text-secondary; horizontal-stretch: 1; overflow: elide; }
-}
-
-// Label + text field used by the location card.
-component Field inherits HorizontalLayout {
-    in property <string> label;
-    spacing: 16px;
-    height: 50px;
-    Text {
-        text: root.label;
-        width: 230px;
-        font-size: 20px;
-        color: Theme.text-secondary;
-        vertical-alignment: center;
-    }
-    @children
 }
 
 export component SettingsScreen inherits Rectangle {
     in property <SettingsView> data;
-    // Location form fields (two-way with the window; Rust fills them when
-    // the screen opens and reads them on "適用").
-    in-out property <string> location-name;
-    in-out property <string> location-coords;
-    in-out property <string> radar-coords;
-    in-out property <string> radar-name;
-    callback action(string);
 
     VerticalLayout {
         padding: 44px;
@@ -83,32 +83,26 @@ export component SettingsScreen inherits Rectangle {
             Text { text: "設定と診断"; font-size: 40px; font-weight: 600; color: Theme.text-primary; vertical-alignment: center; }
             Text { text: root.data.version; font-size: 20px; color: Theme.text-tertiary; vertical-alignment: center; }
             Rectangle { horizontal-stretch: 1; }
-            Text {
-                text: "キー操作: 1 概要 / 2 レーダー / S 設定 / Space 一時停止 / U 再取得 / Esc 戻る";
-                font-size: 17px;
-                color: Theme.text-tertiary;
-                vertical-alignment: center;
-            }
-            Button { text: "閉じる"; clicked => { root.action("close"); } }
+            KeyHelp { key: "S / Esc"; label: "閉じる"; }
+            KeyHelp { key: "Ctrl+Q"; label: "終了"; }
         }
 
         HorizontalLayout {
             spacing: Theme.gap;
             vertical-stretch: 1;
 
-            // ── Display settings ──
+            // ── Display settings (keyboard only) ──
             Card {
                 width: 720px;
                 VerticalLayout {
                     padding: 30px;
-                    spacing: 10px;
+                    spacing: 8px;
                     SectionTitle { text: "表示設定"; trailing: root.data.mode-text; }
 
                     Row {
-                        label: "表示プロファイル  (P)";
-                        Button { text: "Full"; active: root.data.profile-index == 0; clicked => { root.action("profile:full"); } }
-                        Button { text: "Balanced"; active: root.data.profile-index == 1; clicked => { root.action("profile:balanced"); } }
-                        Button { text: "Low"; active: root.data.profile-index == 2; clicked => { root.action("profile:low"); } }
+                        label: "表示プロファイル";
+                        value: root.data.profile-name;
+                        VerticalLayout { alignment: center; KeyCap { text: "P"; } }
                     }
                     Text {
                         text: root.data.profile-detail;
@@ -118,47 +112,33 @@ export component SettingsScreen inherits Rectangle {
                     }
                     Divider { }
                     Row {
-                        label: "自動切り替え  (A)";
-                        Button {
-                            text: root.data.rotation-enabled ? "有効" : "無効";
-                            active: root.data.rotation-enabled;
-                            width: 140px;
-                            clicked => { root.action("rotation:toggle"); }
-                        }
-                        if root.data.rotation-paused: Pill { text: "一時停止中"; tone: Theme.warn; outlined: true; y: 8px; }
-                    }
-                    Row {
-                        label: "概要の表示時間  ([ ])";
-                        Stepper {
-                            value: root.data.overview-seconds;
-                            dec => { root.action("overview:-5"); }
-                            inc => { root.action("overview:+5"); }
+                        label: "自動切り替え";
+                        value: root.data.rotation-enabled ? "有効" : "無効";
+                        VerticalLayout { alignment: center; KeyCap { text: "A"; } }
+                        if root.data.rotation-paused: VerticalLayout {
+                            alignment: center;
+                            Pill { text: "一時停止中 (Space)"; tone: Theme.warn; outlined: true; }
                         }
                     }
                     Row {
-                        label: "レーダー表示時間  (- = 0)";
-                        Stepper {
-                            value: root.data.radar-seconds;
-                            display: root.data.radar-seconds == 0 ? "自動 " + root.data.radar-auto-seconds + "秒" : "";
-                            dec => { root.action("radar:-5"); }
-                            inc => { root.action("radar:+5"); }
-                        }
-                        Button {
-                            text: "自動";
-                            width: 76px;
-                            active: root.data.radar-seconds == 0;
-                            clicked => { root.action("radar:auto"); }
-                        }
+                        label: "概要の表示時間";
+                        value: root.data.overview-seconds + " 秒";
+                        VerticalLayout { alignment: center; KeyCap { text: "["; } }
+                        VerticalLayout { alignment: center; KeyCap { text: "]"; } }
                     }
                     Row {
-                        label: "地図の縮尺  (, .)";
-                        Stepper {
-                            value: root.data.radar-zoom;
-                            display: root.data.radar-zoom-text;
-                            value-width: 220px;
-                            dec => { root.action("zoom:-1"); }
-                            inc => { root.action("zoom:+1"); }
-                        }
+                        label: "レーダー表示時間";
+                        value: root.data.radar-seconds == 0 ? "自動 " + root.data.radar-auto-seconds + " 秒" : root.data.radar-seconds + " 秒";
+                        hint: "0 = 自動";
+                        VerticalLayout { alignment: center; KeyCap { text: "-"; } }
+                        VerticalLayout { alignment: center; KeyCap { text: "="; } }
+                        VerticalLayout { alignment: center; KeyCap { text: "0"; } }
+                    }
+                    Row {
+                        label: "地図の縮尺";
+                        value: root.data.radar-zoom-text;
+                        VerticalLayout { alignment: center; KeyCap { text: ","; } }
+                        VerticalLayout { alignment: center; KeyCap { text: "."; } }
                     }
                     Text {
                         text: "数字を小さくすると広い範囲、大きくすると詳しい表示（1 段階で範囲が 2 倍／半分）";
@@ -168,10 +148,11 @@ export component SettingsScreen inherits Rectangle {
                     }
                     Divider { }
                     HorizontalLayout {
-                        spacing: 14px;
-                        height: 56px;
-                        Button { text: "保存  (W)"; clicked => { root.action("save"); } }
-                        Button { text: "データを再取得  (U)"; clicked => { root.action("refresh"); } }
+                        spacing: 28px;
+                        height: 48px;
+                        KeyHelp { key: "W"; label: "保存"; }
+                        KeyHelp { key: "U"; label: "データを再取得"; }
+                        KeyHelp { key: "Space"; label: "一時停止"; }
                         Rectangle { horizontal-stretch: 1; }
                     }
                     Text {
@@ -181,11 +162,26 @@ export component SettingsScreen inherits Rectangle {
                         wrap: word-wrap;
                     }
                     Rectangle { vertical-stretch: 1; }
-                    KV { key: "設定ファイル"; value: root.data.config-path; }
-                    KV { key: "UI上書き設定"; value: root.data.overrides-path; }
-                    KV { key: "カレンダー"; value: root.data.ical-text; }
-                    KV { key: "キャッシュ"; value: root.data.cache-dir; }
-                    KV { key: "レーダー画像"; value: root.data.radar-memory; }
+                    if root.data.sensors.length > 0: Divider { }
+                    if root.data.sensors.length > 0: SectionTitle { text: "室内センサー"; trailing: "config.toml の [sensors]"; }
+                    for d in root.data.sensors: VerticalLayout {
+                        spacing: 2px;
+                        HorizontalLayout {
+                            spacing: 12px;
+                            height: 30px;
+                            VerticalLayout { alignment: center; StatusDot { health: d.health; } }
+                            Text { text: d.name; width: 70px; font-size: 19px; color: Theme.text-primary; vertical-alignment: center; }
+                            Text { text: d.origin; width: 150px; font-size: 16px; color: Theme.text-tertiary; vertical-alignment: center; }
+                            Text { text: d.next; font-size: 17px; color: Theme.text-secondary; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+                            Text { text: d.last-success; font-size: 16px; color: Theme.text-tertiary; vertical-alignment: center; }
+                        }
+                        if d.error != "": Text {
+                            text: d.error;
+                            font-size: 15px;
+                            color: Theme.warn;
+                            overflow: elide;
+                        }
+                    }
                 }
             }
 
@@ -193,58 +189,19 @@ export component SettingsScreen inherits Rectangle {
                 horizontal-stretch: 1;
                 spacing: Theme.gap;
 
-            // ── Location (entered by hand; no search) ──
+            // ── Read-only configuration (edit config.toml to change) ──
             Card {
                 VerticalLayout {
                     padding: 30px;
                     padding-bottom: 24px;
-                    spacing: 10px;
-                    SectionTitle {
-                        text: "地点";
-                        trailing: "Google マップで地点を右クリックすると「緯度, 経度」をコピーできます";
-                    }
-                    Field {
-                        label: "地点名";
-                        LineEdit {
-                            text <=> root.location-name;
-                            placeholder-text: "例: 東京";
-                            font-size: 20px;
-                        }
-                    }
-                    Field {
-                        label: "座標（緯度, 経度）";
-                        LineEdit {
-                            text <=> root.location-coords;
-                            placeholder-text: "例: 35.6812, 139.7671";
-                            font-size: 20px;
-                        }
-                    }
-                    Field {
-                        label: "雨雲の中心・表示名";
-                        LineEdit {
-                            text <=> root.radar-coords;
-                            placeholder-text: "空欄 = 地点と同じ";
-                            font-size: 20px;
-                        }
-                        LineEdit {
-                            width: 200px;
-                            text <=> root.radar-name;
-                            placeholder-text: "中心の表示名";
-                            font-size: 20px;
-                        }
-                    }
-                    HorizontalLayout {
-                        spacing: 14px;
-                        height: 52px;
-                        Button { text: "適用"; width: 120px; clicked => { root.action("location:apply"); } }
-                        Text {
-                            text: "雨雲の中心は空欄なら地点と同じ。適用すると天気と雨雲を取り直します（保存は W）";
-                            font-size: 17px;
-                            color: Theme.text-tertiary;
-                            vertical-alignment: center;
-                        }
-                        Rectangle { horizontal-stretch: 1; }
-                    }
+                    spacing: 8px;
+                    SectionTitle { text: "設定ファイル"; trailing: "地点・カレンダーは設定ファイルで変更します"; }
+                    KV { key: "地点"; value: root.data.location-text; }
+                    KV { key: "カレンダー"; value: root.data.ical-text; }
+                    KV { key: "設定ファイル"; value: root.data.config-path; }
+                    KV { key: "画面の保存先"; value: root.data.overrides-path; }
+                    KV { key: "キャッシュ"; value: root.data.cache-dir; }
+                    KV { key: "レーダー画像"; value: root.data.radar-memory; }
                 }
             }
 
@@ -279,6 +236,7 @@ export component SettingsScreen inherits Rectangle {
                     SectionTitle { text: "最近の警告・エラー"; }
                     Rectangle {
                         vertical-stretch: 1;
+                        min-height: 60px;
                         border-radius: Theme.radius-small;
                         background: Theme.surface-sunken;
                         clip: true;

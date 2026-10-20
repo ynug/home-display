@@ -13,8 +13,10 @@ use std::sync::Arc;
 use chrono::{DateTime, Days, Duration, Timelike, Utc};
 use chrono_tz::Tz;
 
+use crate::config::SensorModel;
 use crate::model::{CalendarData, EarthquakeData, Holidays, WeatherData};
 use crate::repository::{Payload, Repository};
+use crate::sensors::Values;
 use crate::services::radar::FixtureRadar;
 use crate::services::{calendar, earthquake, holiday, weather};
 use crate::status::{ErrorKind, SourceError, SourceId};
@@ -139,6 +141,40 @@ fn expand(token: &str, now: DateTime<Tz>, jst: DateTime<Tz>) -> Option<String> {
 }
 
 /// Parsed fixture payloads for one scenario (or the error to simulate).
+/// Sample indoor readings per sensor model. Rain closes the windows: CO2
+/// reaches the warning level; Long shows the caution level.
+pub fn sensor_values(scenario: Scenario, model: SensorModel) -> Values {
+    let co2 = match scenario {
+        Scenario::Rain => 1650.0,
+        Scenario::Long => 1180.0,
+        Scenario::Empty => 540.0,
+        _ => 820.0,
+    };
+    let (temp, rh) = match scenario {
+        Scenario::Rain => (22.1, 68.0),
+        _ => (23.4, 46.0),
+    };
+    match model {
+        SensorModel::Sht35 => Values {
+            temperature: Some(temp),
+            humidity: Some(rh),
+            ..Values::default()
+        },
+        // Self-heating: a little warmer and drier than the SHT35.
+        SensorModel::Scd41 => Values {
+            co2: Some(co2),
+            temperature: Some(temp + 1.6),
+            humidity: Some(rh - 4.0),
+            ..Values::default()
+        },
+        SensorModel::Bmp581 => Values {
+            pressure: Some(if scenario == Scenario::Rain { 998.6 } else { 1013.2 }),
+            temperature: Some(temp + 0.8),
+            ..Values::default()
+        },
+    }
+}
+
 pub struct FixtureSet {
     pub scenario: Scenario,
     pub calendar: Result<CalendarData, SourceError>,

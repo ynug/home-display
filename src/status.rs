@@ -9,15 +9,18 @@ pub enum SourceId {
     Earthquake,
     Radar,
     Holiday,
+    /// Indoor I2C sensors (only registered when `[sensors]` is configured).
+    Sensors,
 }
 
 impl SourceId {
-    pub const ALL: [SourceId; 5] = [
+    pub const ALL: [SourceId; 6] = [
         SourceId::Calendar,
         SourceId::Weather,
         SourceId::Earthquake,
         SourceId::Radar,
         SourceId::Holiday,
+        SourceId::Sensors,
     ];
 
     pub fn label(self) -> &'static str {
@@ -27,6 +30,7 @@ impl SourceId {
             SourceId::Earthquake => "地震",
             SourceId::Radar => "レーダー",
             SourceId::Holiday => "祝日",
+            SourceId::Sensors => "室内センサー",
         }
     }
 }
@@ -61,6 +65,8 @@ pub enum ErrorKind {
     Parse,
     Config,
     Io,
+    /// An I2C sensor did not answer or returned invalid data.
+    Device,
 }
 
 /// A fetch failure. `message` must never contain secrets (URLs are stripped
@@ -93,6 +99,7 @@ impl SourceError {
             ErrorKind::Parse => "データ形式を解釈できません".into(),
             ErrorKind::Config => "設定に誤りがあります".into(),
             ErrorKind::Io => "ファイルを読み書きできません".into(),
+            ErrorKind::Device => "センサーを読めません".into(),
         }
     }
 }

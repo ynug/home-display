@@ -116,7 +116,7 @@ impl ScreenManager {
         Some(s)
     }
 
-    /// Cycle Overview ↔ Radar (tap / arrow keys).
+    /// Cycle Overview ↔ Radar (arrow keys).
     pub fn next(&mut self, now: Instant) -> Option<Screen> {
         let target = match self.current {
             Screen::Overview if self.radar_available => Screen::Radar,

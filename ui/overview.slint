@@ -1,9 +1,9 @@
 import { Theme } from "theme.slint";
-import { Card, StatusDot, Pill, SectionTitle, StaleBadge, Placeholder, Divider } from "components.slint";
+import { Card, StatusDot, Pill, SectionTitle, StaleBadge, Placeholder, Divider, IndoorRow } from "components.slint";
 import { WeatherIcon } from "icons.slint";
 import {
     HeaderData, ClockData, CalendarView, EventRow, WeatherView, HourCell, DayCell,
-    QuakeView, QuakeRow, FooterView, SourceChip, PanelState, Health,
+    QuakeView, QuakeRow, FooterView, SourceChip, PanelState, Health, IndoorView,
 } from "types.slint";
 
 // ───────────────────────────── Header ─────────────────────────────
@@ -167,6 +167,7 @@ component DayCellView inherits HorizontalLayout {
 
 export component WeatherCard inherits Card {
     in property <WeatherView> data;
+    in property <IndoorView> indoor;
     min-height: 0px;
     clip: true;
 
@@ -260,6 +261,8 @@ export component WeatherCard inherits Card {
         }
 
         if root.data.state == PanelState.ready: Rectangle { vertical-stretch: 1; }
+
+        if root.indoor.items.length > 0: IndoorRow { data: root.indoor; }
 
         HorizontalLayout {
             spacing: 12px;
@@ -713,6 +716,7 @@ export component OverviewScreen inherits Rectangle {
     in property <ClockData> clock;
     in property <CalendarView> calendar;
     in property <WeatherView> weather;
+    in property <IndoorView> indoor;
     in property <QuakeView> quake;
     in property <FooterView> footer;
 
@@ -734,7 +738,7 @@ export component OverviewScreen inherits Rectangle {
                 spacing: 4px;
                 ClockBlock { data: root.clock; }
                 Rectangle { height: 14px; }
-                WeatherCard { data: root.weather; vertical-stretch: 1; }
+                WeatherCard { data: root.weather; indoor: root.indoor; vertical-stretch: 1; }
             }
 
             VerticalLayout {

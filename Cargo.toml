@@ -1,6 +1,6 @@
 [package]
 name = "home-display"
-version = "0.0.4"
+version = "0.0.5"
 edition = "2024"
 rust-version = "1.98"
 description = "Always-on home information display (clock, calendar, weather, earthquakes, rain radar) built with Rust and Slint"
@@ -20,6 +20,9 @@ desktop = ["slint/backend-winit", "slint/renderer-femtovg", "slint/renderer-soft
 kms = ["slint/backend-linuxkms-noseat", "slint/renderer-femtovg", "slint/renderer-software"]
 # Optional: acquire devices through libseat (seatd / logind) instead.
 kms-libseat = ["kms", "slint/backend-linuxkms-libseat"]
+# Development only: I2C sensors through an FT232H USB adapter (`[sensors] bus = "ftdi"`),
+# e.g. on macOS. Needs libftdi1 (`brew install libftdi`); never enabled for the .deb.
+usb-i2c = ["dep:ftdi-embedded-hal", "ftdi-embedded-hal/ftdi"]
 
 [dependencies]
 slint = { version = "=1.18.1", default-features = false, features = ["std", "compat-1-18"] }
@@ -38,6 +41,13 @@ thiserror = "2.0"
 anyhow = "1.0"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "env-filter", "std", "ansi"] }
+# I2C sensor drivers are written against the embedded-hal 1.0 traits (docs/sensors.md).
+embedded-hal = "1.0.0"
+ftdi-embedded-hal = { version = "0.24.0", optional = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# /dev/i2c-* only: no serial / GPIO / SPI dependencies.
+linux-embedded-hal = { version = "0.5.0", default-features = false, features = ["i2c"] }
 
 [build-dependencies]
 slint-build = "=1.18.1"
@@ -72,7 +82,8 @@ a rain radar (JMA nowcast with 1-hour forecast, RainViewer fallback)."""
 # loaded at run time (dlopen), so shlibdeps cannot see them: list them here.
 # Without them the GPU renderer fails to start (seen on Raspberry Pi 4, v0.0.3).
 depends = "$auto, libegl1, libegl-mesa0, libgles2, fonts-noto-cjk, ca-certificates, adduser"
-recommends = "libgl1-mesa-dri"
+# i2c-tools: i2cdetect for checking the indoor sensor wiring.
+recommends = "libgl1-mesa-dri, i2c-tools"
 maintainer-scripts = "packaging/debian/"
 conf-files = ["/etc/home-display/config.toml"]
 assets = [
@@ -82,5 +93,7 @@ assets = [
     ["README.md", "usr/share/doc/home-display/README.md", "644"],
     ["docs/linux-kms.md", "usr/share/doc/home-display/linux-kms.md", "644"],
     ["docs/raspberry-pi.md", "usr/share/doc/home-display/raspberry-pi.md", "644"],
+    ["docs/sensors.md", "usr/share/doc/home-display/sensors.md", "644"],
+    ["packaging/udev/60-home-display-i2c.rules", "usr/lib/udev/rules.d/60-home-display-i2c.rules", "644"],
 ]
 systemd-units = { unit-name = "home-display", unit-scripts = "packaging/systemd", enable = true, start = false }

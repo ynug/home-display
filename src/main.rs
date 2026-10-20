@@ -29,6 +29,7 @@ OPTIONS:
     --screenshot-advance <T> Advance UI timers by T (e.g. 5s) before rendering
     --screenshot-wait <T>    Max wait for data before rendering (default 90s)
     --check-config           Validate the configuration and exit
+    --read-sensors           Read the [sensors] devices for 15 s, print the values and exit
     -V, --version            Print version
     -h, --help               Print this help
 
@@ -48,9 +49,16 @@ fn parse_now(s: &str, tz: chrono_tz::Tz) -> Option<chrono::DateTime<chrono::Utc>
         .map(|t| t.with_timezone(&chrono::Utc))
 }
 
-fn parse_args() -> Result<Option<(Options, bool)>, String> {
+#[derive(Clone, Copy, PartialEq)]
+enum Command {
+    Run,
+    CheckConfig,
+    ReadSensors,
+}
+
+fn parse_args() -> Result<Option<(Options, Command)>, String> {
     let mut opts = Options::default();
-    let mut check_only = false;
+    let mut command = Command::Run;
     let mut now_raw: Option<String> = None;
     let mut args = std::env::args().skip(1);
     let need = |args: &mut dyn Iterator<Item = String>, flag: &str| args.next().ok_or(format!("{flag} needs a value"));
@@ -107,7 +115,8 @@ fn parse_args() -> Result<Option<(Options, bool)>, String> {
                 let secs = home_display::config::parse_duration_secs(&v).ok_or(format!("bad duration {v:?}"))?;
                 opts.screenshot_advance = Some(std::time::Duration::from_secs(secs));
             }
-            "--check-config" => check_only = true,
+            "--check-config" => command = Command::CheckConfig,
+            "--read-sensors" => command = Command::ReadSensors,
             other => return Err(format!("unknown argument {other:?} (see --help)")),
         }
     }
@@ -116,12 +125,30 @@ fn parse_args() -> Result<Option<(Options, bool)>, String> {
         let tz = app::load(&opts).map(|l| l.tz).unwrap_or(chrono_tz::Asia::Tokyo);
         opts.now = Some(parse_now(&raw, tz).ok_or(format!("cannot parse --now {raw:?}"))?);
     }
-    Ok(Some((opts, check_only)))
+    Ok(Some((opts, command)))
+}
+
+/// Poll the configured sensors for a while and print what they return.
+fn read_sensors(opts: &Options) -> ExitCode {
+    let loaded = match app::load(opts) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("config error: {e:#}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let Some(cfg) = &loaded.cfg.sensors else {
+        eprintln!("[sensors] が設定されていません (docs/sensors.md)");
+        return ExitCode::FAILURE;
+    };
+    println!("bus: {} (15 秒間読み取ります。SCD41 の最初の値は約 5 秒後)", cfg.bus);
+    let ok = home_display::sensors::probe(cfg, std::time::Duration::from_secs(15), |line| println!("{line}"));
+    if ok { ExitCode::SUCCESS } else { ExitCode::FAILURE }
 }
 
 fn main() -> ExitCode {
     home_display::diag::init_logging();
-    let (opts, check_only) = match parse_args() {
+    let (opts, command) = match parse_args() {
         Ok(Some(v)) => v,
         Ok(None) => return ExitCode::SUCCESS,
         Err(e) => {
@@ -129,7 +156,10 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    if check_only {
+    if command == Command::ReadSensors {
+        return read_sensors(&opts);
+    }
+    if command == Command::CheckConfig {
         return match app::load(&opts).and_then(|l| {
             for p in Profile::ALL {
                 l.cfg.profile_settings(p)?;
@@ -177,6 +207,30 @@ fn main() -> ExitCode {
                 fmt(c.radar_refresh(&ps).as_secs()),
                 fmt(c.holiday.refresh_days * 86_400),
             );
+            match &c.sensors {
+                Some(s) => {
+                    println!(
+                        "  sensors: {} every {}s (stale after {}s)",
+                        s.bus, s.interval_seconds, s.stale_seconds
+                    );
+                    for d in &s.device {
+                        println!("    {} = {} @ 0x{:02X}", d.id, d.model.name(), d.address);
+                    }
+                    let shown: Vec<String> = home_display::config::Quantity::ALL
+                        .iter()
+                        .filter_map(|q| s.display.source(*q).map(|id| format!("{} ← {id}", q.key())))
+                        .collect();
+                    println!(
+                        "    display: {}",
+                        if shown.is_empty() {
+                            "(none)".into()
+                        } else {
+                            shown.join(", ")
+                        }
+                    );
+                }
+                None => println!("  sensors: off"),
+            }
             println!("  settings screen overrides: {}", l.paths.overrides_file().display());
             Ok(())
         }) {
@@ -188,6 +242,7 @@ fn main() -> ExitCode {
         };
     }
     match app::run(opts) {
+        Ok(()) if app::quit_requested() => ExitCode::from(app::QUIT_EXIT_CODE),
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             tracing::error!("{e:#}");

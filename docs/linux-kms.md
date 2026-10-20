@@ -18,7 +18,7 @@ DRM/KMS へ直接描画）の検証手順と、現時点での検証状況をま
 | LinuxKMS (femtovg / OpenGL ES) で全画面表示 | ✅ Raspberry Pi 4 で起動・表示を確認（EGL / GLES の手動追加が必要だった。v0.0.4 で依存に追加） |
 | LinuxKMS (software renderer) で全画面表示 | ⏳ 未検証 |
 | root 以外 (video/render/input グループ) で DRM master を取得できる | ⏳ 未検証 |
-| libinput によるキー入力・タッチ | ⏳ 未検証 |
+| libinput によるキー入力 | ⏳ 未検証 |
 | systemd ユニットの hardening 下での起動 | ✅ Raspberry Pi 4 で `.deb` のサービスとして起動を確認 |
 | 72 時間以上の連続稼働でメモリが増え続けない | ⏳ 未検証 |
 | 1280×720 出力 + `SLINT_SCALE_FACTOR=0.6667` | ⏳ 未検証 |
@@ -96,7 +96,7 @@ cargo build --release --no-default-features --features kms-libseat
    ```sh
    sudo -u home-display SLINT_BACKEND=linuxkms-software /usr/bin/home-display --fixture default
    ```
-5. **入力**: キーボードを接続し `1` / `2` / `S` / `Space` / `Esc` が効くか。タッチパネルなら右上長押しで設定画面。
+5. **入力**: キーボードを接続し `1` / `2` / `S` / `Space` / `Esc` / `Ctrl+Q` が効くか（マウス・タッチは無効）。
 6. **プロファイル**: `--profile low` と `--profile full` で Radar のコマ数・アニメーション・メモリを比較。
 7. **720p 出力**: `SLINT_DRM_MODE=<720p の番号> SLINT_SCALE_FACTOR=0.6667` でレイアウトが収まるか。
 8. **回転設置**: `SLINT_KMS_ROTATION=90` など。

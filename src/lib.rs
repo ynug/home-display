@@ -12,6 +12,7 @@ pub mod fixtures;
 pub mod model;
 pub mod repository;
 pub mod screen;
+pub mod sensors;
 pub mod services;
 pub mod status;
 pub mod ui_bridge;

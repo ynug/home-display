@@ -51,6 +51,14 @@ done
 description = "設定ファイルの検証（iCal URL は表示しない）"
 run = "cargo run --quiet -- --check-config"
 
+[tasks.sensors]
+description = "FT232H (USB-I2C) 経由でセンサーを 15 秒間読む（sensors.local.toml。要 brew install libftdi）"
+run = "cargo run --features usb-i2c -- --config sensors.local.toml --read-sensors"
+
+[tasks.sensors-live]
+description = "FT232H 経由のセンサー付きで実データ起動（sensors.local.toml）"
+run = "cargo run --features usb-i2c -- --config sensors.local.toml"
+
 # ───────────── 品質チェック ─────────────
 
 [tasks.fmt]

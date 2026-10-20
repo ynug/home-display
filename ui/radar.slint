@@ -1,10 +1,12 @@
 import { Theme } from "theme.slint";
-import { Card, StatusDot, Pill, SectionTitle, StaleBadge, Placeholder } from "components.slint";
+import { Card, StatusDot, Pill, SectionTitle, StaleBadge, Placeholder, Divider, IndoorGrid } from "components.slint";
 import { WeatherIcon, LocationMarker } from "icons.slint";
-import { HeaderData, ClockData, WeatherView, RadarView, PanelState, Health } from "types.slint";
+import { HeaderData, ClockData, WeatherView, RadarView, PanelState, Health, IndoorView } from "types.slint";
 
 // JMA precipitation scale (mm/h), colours sampled from the nowcast tiles.
 component Legend inherits VerticalLayout {
+    // Keep the title right above the colour bar when the card gives us extra height.
+    alignment: end;
     spacing: 8px;
     Text { text: "降水の強さ (mm/h)"; font-size: 18px; font-weight: 600; color: Theme.text-tertiary; }
     HorizontalLayout {
@@ -78,6 +80,7 @@ export component RadarScreen inherits Rectangle {
     in property <HeaderData> header;
     in property <ClockData> clock;
     in property <WeatherView> weather;
+    in property <IndoorView> indoor;
     in property <RadarView> radar;
     in property <[image]> frames;
     in property <int> frame-ms: 700;
@@ -372,6 +375,8 @@ export component RadarScreen inherits Rectangle {
                         color: Theme.text-tertiary;
                         wrap: word-wrap;
                     }
+                    if root.indoor.items.length > 0: Divider { }
+                    if root.indoor.items.length > 0: IndoorGrid { data: root.indoor; }
                     Rectangle { vertical-stretch: 1; }
                     if root.radar.source-note == "": Legend { }
                 }

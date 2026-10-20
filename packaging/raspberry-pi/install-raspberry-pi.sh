@@ -5,15 +5,21 @@
 # secret iCal URL, the location, and the few OS settings the display needs.
 # Re-running it updates to the newest release and keeps all settings.
 #
-#   sudo ./install.sh --repo OWNER/REPO                 # latest GitHub release
-#   sudo ./install.sh --repo OWNER/REPO --version v0.0.3
-#   sudo ./install.sh --deb ./home-display_0.0.3_arm64.deb
-#   sudo ./install.sh --deb ./home-display-linux-arm64.zip   # Actions artifact
+# The release URL is all that is needed (DEFAULT_REPO below; the release
+# workflow rewrites it to the repository it runs in, so forks work too):
+#
+#   curl -fsSL https://github.com/ynug/home-display/releases/latest/download/install-raspberry-pi.sh | sudo bash
+#
+#   sudo bash install-raspberry-pi.sh                       # latest release
+#   sudo bash install-raspberry-pi.sh --repo OWNER/REPO     # another repository (a fork)
+#   sudo bash install-raspberry-pi.sh --version v0.0.3
+#   sudo bash install-raspberry-pi.sh --deb ./home-display_0.0.3_arm64.deb
+#   sudo bash install-raspberry-pi.sh --deb ./home-display-linux-arm64.zip   # Actions artifact
 #
 # Secrets: the iCal URL is read from the terminal without echo, written only to
 # /etc/home-display/home-display.env (0600 root), and never printed or passed
 # as a command-line argument. For a private repository use an authenticated
-# `gh` CLI, or GITHUB_TOKEN (sudo --preserve-env=GITHUB_TOKEN ./install.sh ...).
+# `gh` CLI, or GITHUB_TOKEN (sudo --preserve-env=GITHUB_TOKEN bash install-raspberry-pi.sh ...).
 
 set -euo pipefail
 
@@ -25,21 +31,28 @@ STATE_DIR=/var/lib/home-display
 CACHE_DIR=/var/cache/home-display
 OVERRIDES=$STATE_DIR/ui-overrides.toml
 
-REPO=${HOME_DISPLAY_REPO:-}
+# Rewritten by the release workflow to the repository it runs in.
+DEFAULT_REPO="ynug/home-display"
+REPO=${HOME_DISPLAY_REPO:-$DEFAULT_REPO}
 VERSION=""
 DEB_SRC=""
 ASSUME_YES=0
+SENSORS=0
 START=1
 NEED_REBOOT=0
 
 usage() {
     cat <<'EOF'
-使い方: sudo ./install.sh [オプション]
+使い方: sudo bash install-raspberry-pi.sh [オプション]
+   または: curl -fsSL <Release の install-raspberry-pi.sh の URL> | sudo bash
 
-  --repo OWNER/REPO   GitHub リポジトリ（.deb を Releases から取得）
+  --repo OWNER/REPO   .deb を取得する GitHub リポジトリ（既定: ynug/home-display）
   --version vX.Y.Z    取得するリリースのタグ（省略時は最新）
   --deb PATH          手元の .deb、または Actions の成果物 .zip を使う（ダウンロードしない）
-  --yes               質問せずに実行（iCal URL・地点・OS 設定は変更しない）
+  --yes               質問せずに実行（iCal URL・地点・OS 設定は変更しない。
+                      以前の版で画面から保存した地点は config.toml に移す）
+  --sensors           室内センサー（SHT35 / SCD41 / BMP581）を質問せずに設定する
+                      （I2C の有効化・i2c-tools・config.toml の [sensors]）
   --no-start          インストール後にサービスを起動しない
   -h, --help          このヘルプ
 
@@ -78,13 +91,14 @@ while [ $# -gt 0 ]; do
     --version) VERSION=${2:?--version に値が必要です}; shift 2 ;;
     --deb) DEB_SRC=${2:?--deb に値が必要です}; shift 2 ;;
     --yes | -y) ASSUME_YES=1; shift ;;
+    --sensors) SENSORS=1; shift ;;
     --no-start) START=0; shift ;;
     -h | --help) usage; exit 0 ;;
     *) usage >&2; die "不明なオプション: $1" ;;
     esac
 done
 
-[ "$(id -u)" = 0 ] || die "root で実行してください（sudo ./install.sh ...）"
+[ "$(id -u)" = 0 ] || die "root で実行してください（sudo bash install-raspberry-pi.sh ...）"
 if [ "$ASSUME_YES" = 0 ] && ! { : </dev/tty; } 2>/dev/null; then
     die "端末がありません。対話なしで実行するには --yes を付けてください"
 fi
@@ -268,19 +282,98 @@ parse_coords() {
     }'
 }
 
+# set_toml FILE SECTION key=value...  (values are TOML literals, e.g. "\"東京\"" or 35.6)
+# Replaces the keys inside [SECTION], adds missing ones at its end, or appends
+# the section. Comments and other keys are kept.
+set_toml() {
+    local file=$1 section=$2 tmp
+    shift 2
+    tmp=$(mktemp "$file.XXXXXX")
+    KV=$(printf '%s\n' "$@") SEC=$section awk '
+        BEGIN {
+            sec = ENVIRON["SEC"]
+            n = split(ENVIRON["KV"], a, "\n")
+            for (i = 1; i <= n; i++) {
+                if (a[i] == "") continue
+                p = index(a[i], "=")
+                k = substr(a[i], 1, p - 1)
+                val[k] = substr(a[i], p + 1)
+                order[++m] = k
+            }
+        }
+        function flush(   i) {
+            for (i = 1; i <= m; i++)
+                if (!(order[i] in done)) { print order[i] " = " val[order[i]]; done[order[i]] = 1 }
+        }
+        # Blank lines at the end of the section go after the added keys.
+        function blanks() { for (; nb > 0; nb--) print "" }
+        insec && /^[[:space:]]*$/ { nb++; next }
+        { if (!/^[[:space:]]*\[/) blanks() }
+        /^[[:space:]]*\[/ {
+            if (insec) flush()
+            blanks()
+            h = $0; gsub(/[[:space:]]/, "", h)
+            insec = (h == "[" sec "]")
+            if (insec) seen = 1
+            print; next
+        }
+        insec && /^[[:space:]]*[A-Za-z_]+[[:space:]]*=/ {
+            k = $0; sub(/^[[:space:]]*/, "", k); sub(/[[:space:]]*=.*/, "", k)
+            if (k in val) { print k " = " val[k]; done[k] = 1; next }
+        }
+        { print }
+        END {
+            if (insec) flush()
+            else if (!seen) { print ""; print "[" sec "]"; flush() }
+            blanks()
+        }
+    ' "$file" >"$tmp"
+    chown --reference="$file" "$tmp"
+    chmod --reference="$file" "$tmp"
+    mv -f "$tmp" "$file"
+}
+
+# TOML basic string literal.
+toml_str() {
+    local v=${1//\\/\\\\}
+    printf '"%s"' "${v//\"/\\\"}"
+}
+
+# Older versions kept the location in ui-overrides.toml (written by the
+# settings screen and this script). It is no longer read: move it to config.toml.
+migrate_legacy_location() {
+    [ -f "$OVERRIDES" ] || return 0
+    local name loc rc rcn lat lon coords
+    name=$(sed -n 's/^location_name[[:space:]]*=[[:space:]]*"\(.*\)"[[:space:]]*$/\1/p' "$OVERRIDES")
+    loc=$(sed -n 's/^location[[:space:]]*=[[:space:]]*"\(.*\)"[[:space:]]*$/\1/p' "$OVERRIDES")
+    rc=$(sed -n 's/^radar_center[[:space:]]*=[[:space:]]*"\(.*\)"[[:space:]]*$/\1/p' "$OVERRIDES")
+    rcn=$(sed -n 's/^radar_center_name[[:space:]]*=[[:space:]]*"\(.*\)"[[:space:]]*$/\1/p' "$OVERRIDES")
+    grep -Eq '^(location_name|location|radar_center|radar_center_name)[[:space:]]*=' "$OVERRIDES" || return 0
+
+    # Values in the file are already TOML-escaped; keep them as they are.
+    if coords=$(parse_coords "$loc"); then
+        lat=${coords%%,*}; lon=${coords##*, }
+        set_toml "$CONFIG_FILE" location ${name:+"name=\"$name\""} "latitude=$lat" "longitude=$lon"
+    fi
+    if [ -n "$rc" ] && coords=$(parse_coords "$rc"); then
+        lat=${coords%%,*}; lon=${coords##*, }
+        set_toml "$CONFIG_FILE" radar "latitude=$lat" "longitude=$lon" ${rcn:+"center_name=\"$rcn\""}
+    fi
+
+    local tmp
+    tmp=$(mktemp "$STATE_DIR/.ui-overrides.XXXXXX")
+    grep -Ev '^(location_name|location|radar_center|radar_center_name)[[:space:]]*=' "$OVERRIDES" >"$tmp" || true
+    chown "$PKG:$PKG" "$tmp"
+    chmod 0600 "$tmp"
+    mv -f "$tmp" "$OVERRIDES"
+    info "画面で保存していた地点を $CONFIG_FILE に移しました"
+}
+
 configure_location() {
-    local cur_name="" cur_loc=""
-    if [ -f "$OVERRIDES" ]; then
-        cur_name=$(sed -n 's/^location_name[[:space:]]*=[[:space:]]*"\(.*\)"[[:space:]]*$/\1/p' "$OVERRIDES")
-        cur_loc=$(sed -n 's/^location[[:space:]]*=[[:space:]]*"\(.*\)"[[:space:]]*$/\1/p' "$OVERRIDES")
-    fi
-    if [ -n "$cur_loc" ]; then
-        echo "地点: ${cur_name:-（名前なし）} ($cur_loc)  ※画面で保存した値"
-    else
-        echo "地点: $CONFIG_FILE の [location] を使用中"
-        sed -n '/^\[location\]/,/^\[/{/^\(name\|latitude\|longitude\)[[:space:]]*=/p}' "$CONFIG_FILE" | sed 's/^/    /'
-    fi
-    ask_yn "地点を設定しますか？" n || return 0
+    migrate_legacy_location
+    echo "地点: $CONFIG_FILE の [location]"
+    sed -n '/^\[location\]/,/^\[/{/^\(name\|latitude\|longitude\)[[:space:]]*=/p}' "$CONFIG_FILE" | sed 's/^/    /'
+    ask_yn "地点を変更しますか？" n || return 0
 
     echo "Google マップで地点を右クリックすると「35.6812, 139.7671」の形式で座標をコピーできます。"
     local name coords
@@ -292,26 +385,93 @@ configure_location() {
         warn "「43.0621, 141.3544」の形式で、範囲内の値を入力してください"
     done
 
-    # TOML basic string: escape backslash and double quote.
-    name=${name//\\/\\\\}
-    name=${name//\"/\\\"}
-
-    install -d -m 0755 -o "$PKG" -g "$PKG" "$STATE_DIR"
-    local tmp
-    tmp=$(mktemp "$STATE_DIR/.ui-overrides.XXXXXX")
-    if [ -f "$OVERRIDES" ]; then
-        grep -Ev '^(location_name|location)[[:space:]]*=' "$OVERRIDES" >"$tmp" || true
-    else
-        echo "# Written by install.sh (same format as the settings screen's save)." >"$tmp"
-    fi
-    printf 'location_name = "%s"\nlocation = "%s"\n' "$name" "$coords" >>"$tmp"
-    chown "$PKG:$PKG" "$tmp"
-    chmod 0600 "$tmp"
-    mv -f "$tmp" "$OVERRIDES"
-    info "地点を $OVERRIDES に保存しました（config.toml より優先されます）"
+    set_toml "$CONFIG_FILE" location ${name:+"name=$(toml_str "$name")"} \
+        "latitude=${coords%%,*}" "longitude=${coords##*, }"
+    info "地点を $CONFIG_FILE に保存しました"
 }
 
-# ───────────── 5. OS の設定 ─────────────
+# ───────────── 5. 室内センサー（I2C） ─────────────
+
+# The sensor board this display is built with (docs/sensors.md).
+SENSORS_BLOCK='
+[sensors]
+# Sensor board (docs/sensors.md): SHT35 0x44 (ADDR=GND), SCD41 0x62,
+# BMP581 0x47 (SDO=3V3) on GPIO2 (SDA) / GPIO3 (SCL).
+bus = "/dev/i2c-1"
+interval_seconds = 1
+stale_seconds = 60
+co2_caution_ppm = 1000
+co2_warning_ppm = 1500
+
+[[sensors.device]]
+id = "room"
+model = "sht35"
+address = 0x44
+
+[[sensors.device]]
+id = "co2"
+model = "scd41"
+address = 0x62
+pressure_from = "baro"
+
+[[sensors.device]]
+id = "baro"
+model = "bmp581"
+address = 0x47
+
+[sensors.display]
+temperature = "room"
+humidity = "room"
+co2 = "co2"
+pressure = "baro"
+'
+
+sensors_configured() {
+    grep -q '^[[:space:]]*\[sensors\]' "$CONFIG_FILE"
+}
+
+# Turn on the I2C controller on GPIO2/3 and load i2c-dev (/dev/i2c-1).
+enable_i2c() {
+    if command -v raspi-config >/dev/null; then
+        if [ "$(raspi-config nonint get_i2c 2>/dev/null)" != 0 ]; then
+            info "I2C を有効にします"
+            raspi-config nonint do_i2c 0
+        fi
+    else
+        local boot=/boot/firmware/config.txt
+        [ -f "$boot" ] || boot=/boot/config.txt
+        if [ -f "$boot" ] && ! grep -q '^dtparam=i2c_arm=on' "$boot"; then
+            info "I2C を有効にします（$boot）"
+            echo 'dtparam=i2c_arm=on' >>"$boot"
+        fi
+        echo i2c-dev >/etc/modules-load.d/home-display-i2c.conf
+    fi
+    modprobe i2c-dev 2>/dev/null || true
+    if [ ! -e /dev/i2c-1 ]; then
+        info "/dev/i2c-1 は再起動後に使えるようになります"
+        NEED_REBOOT=1
+    fi
+}
+
+configure_sensors() {
+    if sensors_configured; then
+        echo "室内センサー: $CONFIG_FILE の [sensors] を使用中"
+    else
+        echo "室内センサー: 未設定（SHT35 0x44 / SCD41 0x62 / BMP581 0x47 の基板を使う場合に設定します）"
+        if [ "$SENSORS" = 0 ] && ! ask_yn "室内センサーを使う設定にしますか？（センサー未接続でも設定できます）" y; then
+            return 0
+        fi
+        printf '%s' "$SENSORS_BLOCK" >>"$CONFIG_FILE"
+        info "$CONFIG_FILE に [sensors] を追加しました"
+    fi
+    enable_i2c
+    if ! command -v i2cdetect >/dev/null; then
+        info "i2c-tools をインストールします（配線の確認用）"
+        apt-get install -y --no-install-recommends i2c-tools || warn "i2c-tools を入れられませんでした"
+    fi
+}
+
+# ───────────── 6. OS の設定 ─────────────
 
 configure_os() {
     # A desktop session (X11/Wayland) owns the display; the app needs it free.
@@ -339,7 +499,7 @@ configure_os() {
     fi
 }
 
-# ───────────── 6. 確認・起動 ─────────────
+# ───────────── 7. 確認・起動 ─────────────
 
 check_config() {
     info "設定ファイルを検証しています"
@@ -372,16 +532,23 @@ start_service() {
     fi
 }
 
-preflight
-if [ -n "$DEB_SRC" ]; then local_deb; else download_release; fi
-install_deb
-configure_ical
-configure_location
-configure_os
-check_config
-start_service
+# Everything runs from one function so that `curl ... | sudo bash` works:
+# bash has read the whole script before any command can consume stdin.
+main() {
+    preflight
+    if [ -n "$DEB_SRC" ]; then local_deb; else download_release; fi
+    install_deb
+    configure_ical
+    configure_location
+    configure_sensors
+    configure_os
+    check_config
+    start_service
 
-cat <<EOF
+    UPDATE_CMD="このスクリプトをもう一度実行"
+    [ -n "$REPO" ] && UPDATE_CMD="curl -fsSL https://github.com/$REPO/releases/latest/download/install-raspberry-pi.sh | sudo bash"
+
+    cat <<EOF
 
 完了しました。
   ログ:          journalctl -u $PKG -f
@@ -389,6 +556,11 @@ cat <<EOF
   設定ファイル:  $CONFIG_FILE（編集後は再起動）
   iCal URL:      $ENV_FILE（0600、root のみ）
   画面の保存値:  $OVERRIDES
-  更新:          sudo $0 ${REPO:+--repo $REPO}
+  センサー確認:  sudo i2cdetect -y 1（0x44 / 0x47 / 0x62 が見えれば接続 OK）
+                 sudo systemctl stop $PKG && sudo home-display --config $CONFIG_FILE --read-sensors
+  更新:          $UPDATE_CMD
   削除:          sudo apt purge $PKG
 EOF
+}
+
+main

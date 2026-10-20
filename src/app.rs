@@ -10,6 +10,7 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use anyhow::Context as _;
@@ -70,6 +71,12 @@ pub fn load(opts: &Options) -> anyhow::Result<Loaded> {
     // Precedence: CLI > settings-screen overrides > config file.
     let overrides = config::load_overrides(&paths.overrides_file());
     cfg.apply_overrides(&overrides);
+    if overrides.has_legacy_location() {
+        tracing::warn!(
+            "{}: location keys are ignored; set [location] / [radar] in config.toml (install-raspberry-pi.sh moves them)",
+            paths.overrides_file().display()
+        );
+    }
     cfg.normalize();
     cfg.validate()?;
     if let Some(sc) = &opts.fixture {
@@ -84,6 +91,10 @@ pub fn load(opts: &Options) -> anyhow::Result<Loaded> {
     }
     if opts.no_rotate {
         cfg.rotation.enabled = false;
+    }
+    // Sample data shows the standard sensor board unless [sensors] says otherwise.
+    if cfg.mode == DataMode::Fixture && cfg.sensors.is_none() {
+        cfg.sensors = Some(config::SensorsConfig::standard());
     }
     let tz = cfg.timezone()?;
     Ok(Loaded {
@@ -121,6 +132,7 @@ struct LastViews {
     footer: Option<view::FooterView>,
     radar: Option<(view::RadarView, bool)>,
     settings: Option<view::SettingsView>,
+    indoor: Option<view::IndoorView>,
 }
 
 /// Decoded radar frames currently handed to the UI.
@@ -151,15 +163,24 @@ pub struct Controller {
     save_message: String,
     /// Screenshot mode: decode synchronously, no event loop available.
     sync_decode: bool,
-    /// Settings-screen location fields were filled for the current visit.
-    location_fields_filled: bool,
     last_minute: Option<i64>,
     /// Radar download progress (shared with the fetch task).
     radar_progress: Arc<services::radar::Progress>,
     last_progress: Option<services::radar::ProgressSnapshot>,
     zoom_tx: watch::Sender<u8>,
-    place_tx: watch::Sender<services::Place>,
-    repo: Arc<Repository>,
+    /// Indoor sensors: written by the sensor thread, polled by `tick`.
+    sensors: Arc<crate::sensors::Shared>,
+    sensor_state: crate::sensors::State,
+}
+
+/// Exit status after Ctrl+Q. The systemd unit doesn't restart on it.
+pub const QUIT_EXIT_CODE: u8 = 10;
+
+static QUIT_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+/// The user asked to quit (Ctrl+Q), as opposed to the window being closed.
+pub fn quit_requested() -> bool {
+    QUIT_REQUESTED.load(Ordering::Relaxed)
 }
 
 thread_local! {
@@ -244,9 +265,13 @@ impl Controller {
             );
         }
         self.last_progress = progress;
+        let sensors_changed = self.sensors.revision() != self.sensor_state.revision;
+        if sensors_changed {
+            self.sensor_state = self.sensors.snapshot();
+        }
         let now = clock::now_in(self.tz);
         let minute = now.timestamp() / 60;
-        if self.last_minute != Some(minute) || progress_changed {
+        if self.last_minute != Some(minute) || progress_changed || sensors_changed {
             self.last_minute = Some(minute);
             self.refresh();
         } else {
@@ -274,13 +299,6 @@ impl Controller {
             self.screens.current(),
             self.screens.radar_dwell()
         );
-        if self.screens.current() == Screen::Settings {
-            if !self.location_fields_filled {
-                self.fill_location_fields();
-            }
-        } else {
-            self.location_fields_filled = false;
-        }
         if let Some(ui) = self.window() {
             ui.set_screen(bridge::screen(self.screens.current()));
         }
@@ -293,7 +311,7 @@ impl Controller {
         let Some(ui) = self.window() else { return };
         let now = clock::now_in(self.tz);
         let screen = self.screens.current();
-        let (header, clock_v, weather, overview, radar, settings) = {
+        let (header, clock_v, weather, indoor, overview, radar, settings) = {
             let cx = self.view_ctx(now);
             let overview =
                 (screen == Screen::Overview).then(|| (view::calendar(&cx), view::quake(&cx), view::footer(&cx)));
@@ -303,6 +321,11 @@ impl Controller {
                 view::header(&cx),
                 view::clock(&cx),
                 view::weather(&cx),
+                view::indoor(
+                    self.cfg.sensors.as_ref(),
+                    &self.sensor_state,
+                    cx.now.with_timezone(&Utc),
+                ),
                 overview,
                 radar,
                 settings,
@@ -320,6 +343,10 @@ impl Controller {
         if self.last.weather.as_ref() != Some(&weather) {
             ui.set_weather(bridge::weather(&weather));
             self.last.weather = Some(weather);
+        }
+        if self.last.indoor.as_ref() != Some(&indoor) {
+            ui.set_indoor(bridge::indoor(&indoor));
+            self.last.indoor = Some(indoor);
         }
         if let Some((cal, quake, footer)) = overview {
             if self.last.calendar.as_ref() != Some(&cal) {
@@ -385,6 +412,14 @@ impl Controller {
                 format!("{} · 約{}km", self.cfg.radar.map_zoom, (km / 10.0).round() as u32 * 10)
             },
             mode_text,
+            location_text: {
+                let l = &self.cfg.location;
+                let mut t = format!("{}（{}, {}）", l.name, l.latitude, l.longitude);
+                if let (Some(lat), Some(lon)) = (self.cfg.radar.latitude, self.cfg.radar.longitude) {
+                    t.push_str(&format!(" · 雨雲の中心 {}（{lat}, {lon}）", self.cfg.radar_label()));
+                }
+                t
+            },
             config_path: self
                 .paths
                 .config_file
@@ -403,6 +438,7 @@ impl Controller {
             ),
             save_message: self.save_message.clone(),
             sources: view::diag_rows(cx),
+            sensors: view::sensor_rows(&self.sensor_state, self.snap.fixture_scenario.is_some(), cx.now),
             logs: diag::recent().into_iter().take(10).collect(),
         }
     }
@@ -536,87 +572,6 @@ impl Controller {
         self.save_message = "変更しました（未保存）".into();
     }
 
-    /// Put the current location into the settings-screen text fields.
-    fn fill_location_fields(&mut self) {
-        let Some(ui) = self.window() else { return };
-        let l = &self.cfg.location;
-        ui.set_edit_location_name(l.name.as_str().into());
-        ui.set_edit_location_coords(format!("{}, {}", l.latitude, l.longitude).into());
-        match (self.cfg.radar.latitude, self.cfg.radar.longitude) {
-            (Some(lat), Some(lon)) => ui.set_edit_radar_coords(format!("{lat}, {lon}").into()),
-            _ => ui.set_edit_radar_coords("".into()),
-        }
-        ui.set_edit_radar_name(self.cfg.radar.center_name.clone().unwrap_or_default().into());
-        self.location_fields_filled = true;
-    }
-
-    /// Validate the location form and apply it immediately.
-    fn apply_location(&mut self) {
-        let Some(ui) = self.window() else { return };
-        let name = ui.get_edit_location_name().trim().to_owned();
-        let coords = ui.get_edit_location_coords().to_string();
-        let radar_coords = ui.get_edit_radar_coords().trim().to_owned();
-        let radar_name = ui.get_edit_radar_name().trim().to_owned();
-
-        if name.is_empty() {
-            self.save_message = "地点名を入力してください".into();
-            return;
-        }
-        let Some((lat, lon)) = config::parse_coordinates(&coords) else {
-            self.save_message = "座標は「緯度, 経度」の形式で入力してください（例: 35.6812, 139.7671）".into();
-            return;
-        };
-        let radar = if radar_coords.is_empty() {
-            None
-        } else {
-            match config::parse_coordinates(&radar_coords) {
-                Some(c) => Some(c),
-                None => {
-                    self.save_message = "雨雲の中心は「緯度, 経度」の形式で入力するか、空欄にしてください".into();
-                    return;
-                }
-            }
-        };
-
-        self.cfg.location.name = name.clone();
-        self.cfg.location.latitude = lat;
-        self.cfg.location.longitude = lon;
-        self.cfg.radar.latitude = radar.map(|r| r.0);
-        self.cfg.radar.longitude = radar.map(|r| r.1);
-        self.cfg.radar.center_name = (!radar_name.is_empty()).then(|| radar_name.clone());
-        self.overrides.location_name = Some(name.clone());
-        self.overrides.location = Some(format!("{lat}, {lon}"));
-        self.overrides.radar_center = Some(radar.map(|(a, b)| format!("{a}, {b}")).unwrap_or_default());
-        self.overrides.radar_center_name = Some(radar_name);
-
-        let place = services::Place::from_config(&self.cfg);
-        let moved = *self.place_tx.borrow() != place;
-        if moved {
-            // Drop data for the old place (live sources only; fixtures are not re-fetched).
-            for id in [SourceId::Weather, SourceId::Radar] {
-                if matches!(
-                    self.snap.status(id).map(|s| &s.origin),
-                    Some(crate::status::Origin::Live(_))
-                ) {
-                    self.repo.reset(id);
-                }
-            }
-            let _ = self.place_tx.send(place);
-        }
-        let (rlat, rlon) = self.cfg.radar_center();
-        let mut msg = format!("地点を「{name}」（{lat:.4}, {lon:.4}）にしました");
-        if moved {
-            msg.push_str("。天気と雨雲を取得し直します");
-        }
-        if !config::in_japan(lat, lon) || !config::in_japan(rlat, rlon) {
-            msg.push_str("。※日本の範囲外のため、雨雲・地図は表示されない可能性があります");
-        }
-        msg.push_str("（未保存）");
-        self.save_message = msg;
-        self.last = LastViews::default();
-        tracing::info!("location → {name} ({lat}, {lon}); radar centre ({rlat}, {rlon})");
-    }
-
     /// Change the radar map zoom; the radar is re-fetched for the new area.
     fn adjust_zoom(&mut self, delta: i32) {
         let range = config::RADAR_ZOOM_RANGE;
@@ -656,6 +611,12 @@ impl Controller {
         self.screens.touch(now);
         let in_settings = self.screens.current() == Screen::Settings;
         let changed = match action {
+            "quit" => {
+                tracing::info!("quit requested from the keyboard");
+                QUIT_REQUESTED.store(true, Ordering::Relaxed);
+                let _ = slint::quit_event_loop();
+                None
+            }
             "key:1" => self.screens.show(Screen::Overview, now),
             "key:2" => self.screens.show(Screen::Radar, now),
             "key:3" | "key:s" => {
@@ -665,9 +626,8 @@ impl Controller {
                     self.screens.show(Screen::Settings, now)
                 }
             }
-            "open-settings" => self.screens.show(Screen::Settings, now),
-            "key:escape" | "close" => self.screens.show(Screen::Overview, now),
-            "key:next" | "key:prev" | "tap" => self.screens.next(now),
+            "key:escape" => self.screens.show(Screen::Overview, now),
+            "key:next" | "key:prev" => self.screens.next(now),
             "key:space" => {
                 let paused = self.screens.toggle_pause(now);
                 tracing::info!("rotation {}", if paused { "paused" } else { "resumed" });
@@ -700,10 +660,6 @@ impl Controller {
             }
             "key:=" => {
                 self.adjust_radar("5");
-                None
-            }
-            "location:apply" => {
-                self.apply_location();
                 None
             }
             "key:," | "zoom:-1" => {
@@ -756,9 +712,12 @@ struct Runtime {
     repo: Arc<Repository>,
     wake: Arc<Notify>,
     radar_progress: Arc<services::radar::Progress>,
+    sensors: Arc<crate::sensors::Shared>,
     profile_tx: watch::Sender<ProfileSettings>,
     zoom_tx: watch::Sender<u8>,
-    place_tx: watch::Sender<services::Place>,
+    /// Never changes now that the location is set in config.toml only, but
+    /// must stay alive: sources stop when the place channel closes.
+    _place_tx: watch::Sender<services::Place>,
 }
 
 fn start_backend(loaded: &Loaded, profile: ProfileSettings) -> anyhow::Result<Runtime> {
@@ -776,6 +735,7 @@ fn start_backend(loaded: &Loaded, profile: ProfileSettings) -> anyhow::Result<Ru
     let radar_progress = Arc::new(services::radar::Progress::default());
     let (zoom_tx, zoom_rx) = watch::channel(loaded.cfg.radar.map_zoom);
     let (place_tx, place_rx) = watch::channel(services::Place::from_config(&loaded.cfg));
+    let sensors = crate::sensors::Shared::new(loaded.cfg.sensors.as_ref());
     let ctx = services::Context {
         repo: repo.clone(),
         http: {
@@ -790,6 +750,7 @@ fn start_backend(loaded: &Loaded, profile: ProfileSettings) -> anyhow::Result<Ru
         radar_progress: radar_progress.clone(),
         radar_zoom: zoom_rx,
         place: place_rx,
+        sensors: sensors.clone(),
     };
     services::spawn_all(rt.handle(), ctx);
     Ok(Runtime {
@@ -797,9 +758,10 @@ fn start_backend(loaded: &Loaded, profile: ProfileSettings) -> anyhow::Result<Ru
         repo,
         wake,
         radar_progress,
+        sensors,
         profile_tx,
         zoom_tx,
-        place_tx,
+        _place_tx: place_tx,
     })
 }
 
@@ -844,13 +806,12 @@ fn make_controller(
         radar: RadarImages::default(),
         save_message: String::new(),
         sync_decode,
-        location_fields_filled: false,
         last_minute: None,
         radar_progress: backend.radar_progress.clone(),
         last_progress: None,
         zoom_tx: backend.zoom_tx.clone(),
-        place_tx: backend.place_tx.clone(),
-        repo: backend.repo.clone(),
+        sensor_state: backend.sensors.snapshot(),
+        sensors: backend.sensors.clone(),
     }));
     CONTROLLER.with(|slot| *slot.borrow_mut() = Rc::downgrade(&c));
     c

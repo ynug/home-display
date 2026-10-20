@@ -149,6 +149,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # The attached installer downloads from this repository (forks included), so
+          # `curl -fsSL .../releases/latest/download/install-raspberry-pi.sh | sudo bash` needs no --repo.
+          sed 's|^DEFAULT_REPO=".*"$|DEFAULT_REPO="'"${GITHUB_REPOSITORY}"'"|' \
+            packaging/raspberry-pi/install-raspberry-pi.sh >dist/install-raspberry-pi.sh
+          grep -qx "DEFAULT_REPO=\"${GITHUB_REPOSITORY}\"" dist/install-raspberry-pi.sh
+          bash -n dist/install-raspberry-pi.sh
           gh release create "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" \
             --title "${GITHUB_REF_NAME}" --generate-notes dist/*/debian/*.deb \
-            packaging/raspberry-pi/install.sh
+            dist/install-raspberry-pi.sh

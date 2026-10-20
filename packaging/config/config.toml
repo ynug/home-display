@@ -12,8 +12,8 @@ mode = "live"
 fixture_scenario = "default"
 
 [location]
-# Can also be set on the settings screen. Copy "lat, lon" from Google Maps
-# (right-click a place) — there is no place search.
+# Set here only (shown read-only on the settings screen). Copy "lat, lon" from
+# Google Maps (right-click a place) — there is no place search.
 name = "東京"
 latitude = 35.6812
 longitude = 139.7671
@@ -107,3 +107,37 @@ refresh_days = 7
 # radar_frames = 1
 # radar_frame_ms = 0
 # visual_effects = false
+
+# Indoor I2C sensors (Raspberry Pi: enable I2C with `raspi-config nonint do_i2c 0`).
+# Off unless this table exists. Details: /usr/share/doc/home-display/sensors.md
+# Check wiring and addresses with:  home-display --read-sensors
+# [sensors]
+# bus = "/dev/i2c-1"          # GPIO2 (SDA) / GPIO3 (SCL)
+# interval_seconds = 1        # 1-60; SCD41 produces a new value every 5 s
+# stale_seconds = 60          # older values are dimmed
+# co2_caution_ppm = 1000
+# co2_warning_ppm = 1500
+#
+# [[sensors.device]]
+# id = "room"                 # any name (letters, digits, - _)
+# model = "sht35"             # sht35 | scd41 | bmp581
+# address = 0x44              # 0x44 / 0x45
+#
+# [[sensors.device]]
+# id = "co2"
+# model = "scd41"
+# address = 0x62
+# pressure_from = "baro"      # optional: pressure compensation for CO2
+# auto_calibration = true     # optional: ASC (needs fresh air about weekly)
+#
+# [[sensors.device]]
+# id = "baro"
+# model = "bmp581"
+# address = 0x47              # 0x46 / 0x47
+#
+# # Which device supplies each displayed value; omitted values are not shown.
+# [sensors.display]
+# temperature = "room"
+# humidity = "room"
+# co2 = "co2"
+# pressure = "baro"

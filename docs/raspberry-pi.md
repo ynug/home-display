@@ -5,7 +5,7 @@ GitHub Actions がビルドした `.deb` を、Raspberry Pi に入れて電源�
 
 > **検証状況:** Raspberry Pi 4 で `.deb`（v0.0.3）をインストールし、起動・表示できることを確認しました。
 > v0.0.3 以前の `.deb` では、先に EGL / GLES のライブラリを入れる必要があります（下記「v0.0.3 以前の場合」）。
-> 長時間稼働やタッチ操作などは未確認です（[linux-kms.md](linux-kms.md)）。
+> 長時間稼働などは未確認です（[linux-kms.md](linux-kms.md)）。操作はキーボードのみです（マウス・タッチは無効）。
 
 ## 必要なもの
 
@@ -46,20 +46,27 @@ git tag v0.0.3
 git push origin v0.0.3
 ```
 
-Release には `home-display_0.0.3_arm64.deb`（Pi 用）と `home-display_0.0.3_amd64.deb`、`install.sh` が添付されます
+Release には `home-display_0.0.3_arm64.deb`（Pi 用）と `home-display_0.0.3_amd64.deb`、`install-raspberry-pi.sh` が添付されます
 （ファイル名の版はタグから `v` を除いたものと同じ）。
 タグを付けずに試す場合は、Actions の実行結果から成果物 `home-display-linux-arm64`（zip）をダウンロードし、
 `scp` で Pi に送って `--deb` で指定します（下記）。
 
 ## 3. インストール（Pi 上で）
 
-[`packaging/raspberry-pi/install.sh`](../packaging/raspberry-pi/install.sh) を使います。
+[`packaging/raspberry-pi/install-raspberry-pi.sh`](../packaging/raspberry-pi/install-raspberry-pi.sh) を使います。
+**Release の URL を指定するだけ**でインストールできます（`.deb` も [ynug/home-display](https://github.com/ynug/home-display) の Release から取得します）。
 
 ```sh
-# Release に添付された install.sh を取得（OWNER/REPO は自分のリポジトリ）
-curl -fsSLO https://github.com/OWNER/REPO/releases/latest/download/install.sh
-less install.sh                       # 実行前に内容を確認
-sudo bash install.sh --repo OWNER/REPO
+curl -fsSL https://github.com/ynug/home-display/releases/latest/download/install-raspberry-pi.sh | sudo bash
+```
+
+オプションを付けるときは `| sudo bash -s -- --sensors` のように渡します。
+実行前に中身を確認したい場合は、いったん保存してから実行します。
+
+```sh
+curl -fsSLO https://github.com/ynug/home-display/releases/latest/download/install-raspberry-pi.sh
+less install-raspberry-pi.sh          # 実行前に内容を確認
+sudo bash install-raspberry-pi.sh
 ```
 
 スクリプトが行うこと:
@@ -69,8 +76,10 @@ sudo bash install.sh --repo OWNER/REPO
 3. `apt` でインストール（必要なライブラリ・日本語フォントも自動で入ります）
 4. **iCal URL** を入力（画面に表示されません。`/etc/home-display/home-display.env` に 0600 で保存）
 5. **地点** を入力（地点名と「緯度, 経度」。日本語の地点名も可）
-6. デスクトップが起動する設定なら、デスクトップなしの起動に変更するか確認。タイムゾーン・時刻同期を確認
-7. 設定ファイルを検証し、サービスを有効化・起動
+6. **室内センサー** を使うか確認（SHT35 / SCD41 / BMP581 の基板。センサー未接続でも設定できます）。
+   使う場合は I2C を有効にし、`i2c-tools` を入れ、`config.toml` に `[sensors]` を追加します（`--sensors` で質問なし）
+7. デスクトップが起動する設定なら、デスクトップなしの起動に変更するか確認。タイムゾーン・時刻同期を確認
+8. 設定ファイルを検証し、サービスを有効化・起動
 
 インストール後は電源を入れるだけで表示が始まります（`home-display.service` が自動起動し、
 異常終了しても 5 秒後に再起動します）。
@@ -89,21 +98,24 @@ sudo apt install libegl1 libegl-mesa0 libgles2
 ### その他の指定方法
 
 ```sh
-sudo bash install.sh --repo OWNER/REPO --version v0.0.3     # 版を指定
-sudo bash install.sh --deb ./home-display-linux-arm64.zip    # Actions の成果物（zip のまま可）
-sudo bash install.sh --deb ./home-display_0.0.3_arm64.deb    # .deb を直接
-sudo bash install.sh --repo OWNER/REPO --yes                 # 質問なし（更新用。設定は変えない）
+sudo bash install-raspberry-pi.sh --version v0.0.3                # 版を指定
+sudo bash install-raspberry-pi.sh --sensors                       # 室内センサーを質問なしで設定
+sudo bash install-raspberry-pi.sh --deb ./home-display-linux-arm64.zip    # Actions の成果物（zip のまま可）
+sudo bash install-raspberry-pi.sh --deb ./home-display_0.0.3_arm64.deb    # .deb を直接
+sudo bash install-raspberry-pi.sh --yes                           # 質問なし（更新用。設定は変えない）
+sudo bash install-raspberry-pi.sh --repo OWNER/REPO               # フォークなど別のリポジトリから取得
 ```
 
-**非公開リポジトリの場合:** `gh auth login` 済みの `gh` があれば自動で使います。
+**非公開リポジトリ（非公開のフォークなど）の場合:** `gh auth login` 済みの `gh` があれば自動で使います。
 または、トークンをコマンド履歴に残さないように読み込んで渡します。
 
 ```sh
 read -rs GITHUB_TOKEN && export GITHUB_TOKEN    # 貼り付けて Enter（表示されません）
-sudo --preserve-env=GITHUB_TOKEN bash install.sh --repo OWNER/REPO
+sudo --preserve-env=GITHUB_TOKEN bash install-raspberry-pi.sh
 ```
 
-`curl .../install.sh` も非公開リポジトリでは取得できないので、`scp` で送るか `gh release download -p install.sh` を使います。
+非公開リポジトリでは Release の URL を `curl` で取得できないので、`scp` で送るか
+`gh release download -R OWNER/REPO -p install-raspberry-pi.sh` を使います。
 
 ## 4. 動作確認
 
@@ -117,16 +129,16 @@ journalctl -u home-display -f          # ログ（iCal URL は出力されませ
 同じスクリプトをもう一度実行します。設定（`config.toml`・iCal URL・画面で保存した値）は保持されます。
 
 ```sh
-sudo bash install.sh --repo OWNER/REPO --yes
+curl -fsSL https://github.com/ynug/home-display/releases/latest/download/install-raspberry-pi.sh | sudo bash -s -- --yes
 ```
 
 ## 6. 設定の変更
 
 | 変更したいもの | 方法 |
 |---|---|
-| 地点・iCal URL | `sudo bash install.sh --repo OWNER/REPO` を再実行して質問に答える |
-| プロファイル・表示時間・縮尺など | `sudo nano /etc/home-display/config.toml` → `sudo systemctl restart home-display` |
-| 画面で保存した値の確認・修正 | `/var/lib/home-display/ui-overrides.toml`（[README の「地点」](../README.md#地点)参照） |
+| 地点・iCal URL | インストールのコマンドを再実行して質問に答える（地点は `config.toml` の `[location]` を直接編集しても可。[README の「地点」](../README.md#地点)） |
+| プロファイル・表示時間・縮尺など | キーボードで設定画面（`S`）から変えて `W` で保存、または `sudo nano /etc/home-display/config.toml` → `sudo systemctl restart home-display` |
+| 画面で保存した値の確認・修正 | `/var/lib/home-display/ui-overrides.toml` |
 
 設定画面で保存した値は `config.toml` より優先されます。
 

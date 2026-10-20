@@ -160,6 +160,8 @@ impl Repository {
                 SourceId::Earthquake => s.earthquake = None,
                 SourceId::Radar => s.radar = None,
                 SourceId::Holiday => s.holidays = None,
+                // Sensor values live in `sensors::Shared`, not in the snapshot.
+                SourceId::Sensors => {}
             }
             if let Some(st) = s.status.get_mut(&id) {
                 *st = SourceStatus::new(st.origin.clone(), st.stale_after);

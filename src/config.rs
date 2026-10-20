@@ -205,6 +205,8 @@ pub struct AppConfig {
     pub radar: RadarConfig,
     pub holiday: HolidayConfig,
     pub profiles: ProfileOverrides,
+    /// Indoor I2C sensors; `None` (no `[sensors]` table) = feature off.
+    pub sensors: Option<SensorsConfig>,
 }
 
 impl Default for AppConfig {
@@ -221,6 +223,7 @@ impl Default for AppConfig {
             radar: RadarConfig::default(),
             holiday: HolidayConfig::default(),
             profiles: ProfileOverrides::default(),
+            sensors: None,
         }
     }
 }
@@ -465,6 +468,255 @@ impl Default for HolidayConfig {
     }
 }
 
+/// What a sensor measures. Units are fixed: °C, %RH, ppm, hPa.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Quantity {
+    Temperature,
+    Humidity,
+    Co2,
+    Pressure,
+}
+
+impl Quantity {
+    pub const ALL: [Quantity; 4] = [
+        Quantity::Temperature,
+        Quantity::Humidity,
+        Quantity::Co2,
+        Quantity::Pressure,
+    ];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Quantity::Temperature => "temperature",
+            Quantity::Humidity => "humidity",
+            Quantity::Co2 => "co2",
+            Quantity::Pressure => "pressure",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Quantity::Temperature => "温度",
+            Quantity::Humidity => "湿度",
+            Quantity::Co2 => "CO2",
+            Quantity::Pressure => "気圧",
+        }
+    }
+
+    pub fn unit(self) -> &'static str {
+        match self {
+            Quantity::Temperature => "℃",
+            Quantity::Humidity => "%",
+            Quantity::Co2 => "ppm",
+            Quantity::Pressure => "hPa",
+        }
+    }
+}
+
+/// Supported I2C sensor chips (one driver each in `src/sensors/`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SensorModel {
+    Sht35,
+    Scd41,
+    Bmp581,
+}
+
+impl SensorModel {
+    pub fn name(self) -> &'static str {
+        match self {
+            SensorModel::Sht35 => "SHT35",
+            SensorModel::Scd41 => "SCD41",
+            SensorModel::Bmp581 => "BMP581",
+        }
+    }
+
+    pub fn quantities(self) -> &'static [Quantity] {
+        match self {
+            SensorModel::Sht35 => &[Quantity::Temperature, Quantity::Humidity],
+            SensorModel::Scd41 => &[Quantity::Co2, Quantity::Temperature, Quantity::Humidity],
+            SensorModel::Bmp581 => &[Quantity::Pressure, Quantity::Temperature],
+        }
+    }
+}
+
+/// `[sensors]` — read directly over I2C (docs/sensors.md).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SensorsConfig {
+    /// `/dev/i2c-N` on Linux, or `"ftdi"` for an FT232H USB adapter
+    /// (development builds with the `usb-i2c` feature).
+    pub bus: String,
+    pub interval_seconds: u64,
+    /// Values older than this are shown dimmed.
+    pub stale_seconds: u64,
+    pub co2_caution_ppm: u32,
+    pub co2_warning_ppm: u32,
+    pub device: Vec<SensorDevice>,
+    pub display: SensorDisplay,
+}
+
+impl Default for SensorsConfig {
+    fn default() -> Self {
+        SensorsConfig {
+            bus: "/dev/i2c-1".into(),
+            interval_seconds: 1,
+            stale_seconds: 60,
+            co2_caution_ppm: 1000,
+            co2_warning_ppm: 1500,
+            device: Vec::new(),
+            display: SensorDisplay::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SensorDevice {
+    /// Free name referenced from `[sensors.display]` / `pressure_from`.
+    pub id: String,
+    pub model: SensorModel,
+    /// 7-bit I2C address (`0x44` in TOML).
+    pub address: u8,
+    /// SCD41: compensate CO2 with the pressure of this device.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pressure_from: Option<String>,
+    /// SCD41: automatic self-calibration; unset = keep the sensor's setting.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_calibration: Option<bool>,
+}
+
+/// Which device supplies each displayed value; unset = not shown.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SensorDisplay {
+    pub temperature: Option<String>,
+    pub humidity: Option<String>,
+    pub co2: Option<String>,
+    pub pressure: Option<String>,
+}
+
+impl SensorDisplay {
+    pub fn source(&self, q: Quantity) -> Option<&str> {
+        match q {
+            Quantity::Temperature => self.temperature.as_deref(),
+            Quantity::Humidity => self.humidity.as_deref(),
+            Quantity::Co2 => self.co2.as_deref(),
+            Quantity::Pressure => self.pressure.as_deref(),
+        }
+    }
+}
+
+/// Valid 7-bit addresses (0x00–0x07 and 0x78–0x7F are reserved).
+pub const I2C_ADDRESS_RANGE: std::ops::RangeInclusive<u8> = 0x08..=0x77;
+
+impl SensorsConfig {
+    /// The sensor board this display is built with (docs/sensors.md):
+    /// SHT35 at 0x44 (ADDR = GND), SCD41 at 0x62, BMP581 at 0x47 (SDO = 3V3)
+    /// on `/dev/i2c-1`. Temperature and humidity come from the SHT35 (the
+    /// SCD41 self-heats). Also used for the sample data.
+    pub fn standard() -> SensorsConfig {
+        let dev = |id: &str, model, address| SensorDevice {
+            id: id.into(),
+            model,
+            address,
+            pressure_from: None,
+            auto_calibration: None,
+        };
+        SensorsConfig {
+            device: vec![
+                dev("room", SensorModel::Sht35, 0x44),
+                SensorDevice {
+                    pressure_from: Some("baro".into()),
+                    ..dev("co2", SensorModel::Scd41, 0x62)
+                },
+                dev("baro", SensorModel::Bmp581, 0x47),
+            ],
+            display: SensorDisplay {
+                temperature: Some("room".into()),
+                humidity: Some("room".into()),
+                co2: Some("co2".into()),
+                pressure: Some("baro".into()),
+            },
+            ..SensorsConfig::default()
+        }
+    }
+
+    pub fn find(&self, id: &str) -> Option<&SensorDevice> {
+        self.device.iter().find(|d| d.id == id)
+    }
+
+    pub fn validate(&self) -> Result<(), ConfigError> {
+        let bad = |m: String| Err(ConfigError::Invalid(format!("sensors: {m}")));
+        if self.bus.trim().is_empty() {
+            return bad("bus が空です".into());
+        }
+        if !(1..=60).contains(&self.interval_seconds) {
+            return bad("interval_seconds は 1〜60 で指定してください".into());
+        }
+        if self.co2_caution_ppm == 0 || self.co2_caution_ppm > self.co2_warning_ppm {
+            return bad("co2_caution_ppm は 1 以上、co2_warning_ppm 以下にしてください".into());
+        }
+        if self.device.is_empty() {
+            return bad("[[sensors.device]] が 1 つもありません".into());
+        }
+        for (i, d) in self.device.iter().enumerate() {
+            let valid_id = !d.id.is_empty() && d.id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+            if !valid_id {
+                return bad(format!("id {:?} は英数字と - _ で指定してください", d.id));
+            }
+            if !I2C_ADDRESS_RANGE.contains(&d.address) {
+                return bad(format!(
+                    "{}: address 0x{:02X} は 0x08〜0x77 の範囲外です",
+                    d.id, d.address
+                ));
+            }
+            for other in &self.device[..i] {
+                if other.id == d.id {
+                    return bad(format!("id {:?} が重複しています", d.id));
+                }
+                if other.address == d.address {
+                    return bad(format!(
+                        "{} と {} のアドレス 0x{:02X} が重複しています",
+                        other.id, d.id, d.address
+                    ));
+                }
+            }
+            if d.model != SensorModel::Scd41 && (d.pressure_from.is_some() || d.auto_calibration.is_some()) {
+                return bad(format!(
+                    "{}: pressure_from / auto_calibration は scd41 にだけ指定できます",
+                    d.id
+                ));
+            }
+            if let Some(src) = &d.pressure_from {
+                match self.find(src) {
+                    Some(p) if p.model.quantities().contains(&Quantity::Pressure) => {}
+                    Some(_) => return bad(format!("{}: pressure_from {src:?} は気圧を測れません", d.id)),
+                    None => return bad(format!("{}: pressure_from {src:?} という id はありません", d.id)),
+                }
+            }
+        }
+        for q in Quantity::ALL {
+            if let Some(src) = self.display.source(q) {
+                match self.find(src) {
+                    Some(d) if d.model.quantities().contains(&q) => {}
+                    Some(d) => {
+                        return bad(format!(
+                            "display.{} = {src:?}: {} は{}を測れません",
+                            q.key(),
+                            d.model.name(),
+                            q.label()
+                        ));
+                    }
+                    None => return bad(format!("display.{} = {src:?} という id はありません", q.key())),
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Values the settings screen may change at runtime. Persisted separately
 /// (in the writable state directory) so the admin-owned config is never rewritten.
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
@@ -476,14 +728,27 @@ pub struct UiOverrides {
     pub radar_seconds: Option<u32>,
     /// Radar base-map zoom (5–11).
     pub radar_zoom: Option<u8>,
-    /// Location name set on the settings screen.
+    /// Legacy location keys (older settings screens and the Pi installer wrote
+    /// them). Still read so old files parse, but ignored and dropped on the
+    /// next save: the location now comes from config.toml only.
+    #[serde(skip_serializing)]
     pub location_name: Option<String>,
-    /// Location "lat, lon".
+    #[serde(skip_serializing)]
     pub location: Option<String>,
-    /// Radar centre "lat, lon"; empty string = same as the location.
+    #[serde(skip_serializing)]
     pub radar_center: Option<String>,
-    /// Label for a separate radar centre; empty = none.
+    #[serde(skip_serializing)]
     pub radar_center_name: Option<String>,
+}
+
+impl UiOverrides {
+    /// The file still has location keys that are no longer applied.
+    pub fn has_legacy_location(&self) -> bool {
+        self.location_name.is_some()
+            || self.location.is_some()
+            || self.radar_center.is_some()
+            || self.radar_center_name.is_some()
+    }
 }
 
 /// Radar map zoom range offered on the settings screen.
@@ -543,6 +808,9 @@ impl AppConfig {
         for p in Profile::ALL {
             self.profile_settings(p)?;
         }
+        if let Some(sensors) = &self.sensors {
+            sensors.validate()?;
+        }
         Ok(())
     }
 
@@ -590,32 +858,6 @@ impl AppConfig {
         {
             self.radar.map_zoom = z;
         }
-        if let Some(n) = &o.location_name
-            && !n.trim().is_empty()
-        {
-            self.location.name = n.trim().to_owned();
-        }
-        if let Some((lat, lon)) = o.location.as_deref().and_then(parse_coordinates) {
-            self.location.latitude = lat;
-            self.location.longitude = lon;
-        }
-        match o.radar_center.as_deref().map(str::trim) {
-            Some("") => {
-                self.radar.latitude = None;
-                self.radar.longitude = None;
-            }
-            Some(c) => {
-                if let Some((lat, lon)) = parse_coordinates(c) {
-                    self.radar.latitude = Some(lat);
-                    self.radar.longitude = Some(lon);
-                }
-            }
-            None => {}
-        }
-        if let Some(n) = &o.radar_center_name {
-            let n = n.trim();
-            self.radar.center_name = (!n.is_empty()).then(|| n.to_owned());
-        }
     }
 
     /// Radar map centre: `[radar]` latitude/longitude, else `[location]`.
@@ -656,6 +898,10 @@ impl AppConfig {
         at_least(&mut self.earthquake.stale_minutes, self.earthquake.refresh_seconds);
         if let Some(s) = self.radar.refresh_seconds {
             at_least(&mut self.radar.stale_minutes, s);
+        }
+        // SCD41 produces a value every 5 s whatever the interval.
+        if let Some(s) = &mut self.sensors {
+            s.stale_seconds = s.stale_seconds.max(s.interval_seconds * 3).max(15);
         }
     }
 
@@ -934,34 +1180,27 @@ mod tests {
     }
 
     #[test]
-    fn location_overrides() {
+    fn legacy_location_overrides_are_ignored() {
+        let path = std::env::temp_dir().join(format!("hd-legacy-{}.toml", std::process::id()));
+        std::fs::write(
+            &path,
+            "location_name = \"大阪\"\nlocation = \"34.6937, 135.5023\"\nradar_center = \"\"\nradar_zoom = 8\n",
+        )
+        .unwrap();
+        let o = load_overrides(&path);
+        let _ = std::fs::remove_file(&path);
+        assert!(o.has_legacy_location(), "old files still parse");
+
         let mut c = AppConfig::default();
-        c.apply_overrides(&UiOverrides {
-            location_name: Some(" 大阪 ".into()),
-            location: Some("34.6937, 135.5023".into()),
-            ..Default::default()
-        });
-        assert_eq!(c.location.name, "大阪");
-        assert_eq!((c.location.latitude, c.location.longitude), (34.6937, 135.5023));
-        assert_eq!(c.radar_center(), (34.6937, 135.5023), "radar follows the location");
-        assert_eq!(c.radar_label(), "大阪");
-
-        c.apply_overrides(&UiOverrides {
-            radar_center: Some("36.0,138.0".into()),
-            radar_center_name: Some("中部".into()),
-            ..Default::default()
-        });
-        assert_eq!(c.radar_center(), (36.0, 138.0));
-        assert_eq!(c.radar_label(), "中部");
-        assert_eq!(c.location.latitude, 34.6937, "weather location unchanged");
-
-        // Empty centre = follow the location again; invalid values are ignored.
-        c.apply_overrides(&UiOverrides {
-            radar_center: Some(String::new()),
-            location: Some("not a place".into()),
-            ..Default::default()
-        });
-        assert_eq!(c.radar_center(), (34.6937, 135.5023));
+        let before = (c.location.name.clone(), c.location.latitude, c.location.longitude);
+        c.apply_overrides(&o);
+        assert_eq!(
+            (c.location.name.clone(), c.location.latitude, c.location.longitude),
+            before
+        );
+        assert_eq!(c.radar.map_zoom, 8, "other keys still apply");
+        let saved = toml::to_string(&o).unwrap();
+        assert!(!saved.contains("location"), "dropped on the next save: {saved}");
     }
 
     #[test]
@@ -999,10 +1238,7 @@ mod tests {
             overview_seconds: Some(30),
             radar_seconds: None,
             radar_zoom: Some(8),
-            location_name: Some("札幌".into()),
-            location: Some("43.0621, 141.3544".into()),
-            radar_center: Some(String::new()),
-            radar_center_name: None,
+            ..Default::default()
         };
         save_overrides(&path, &o).unwrap();
         assert_eq!(load_overrides(&path), o);
@@ -1064,5 +1300,83 @@ mod tests {
         let w9 = radar_view_width_km(35.68, 9);
         assert!((330.0..350.0).contains(&w9), "{w9}");
         assert!((radar_view_width_km(35.68, 10) * 2.0 - w9).abs() < 0.01);
+    }
+
+    const SENSORS: &str = r#"
+[sensors]
+bus = "/dev/i2c-1"
+interval_seconds = 1
+
+[[sensors.device]]
+id = "room"
+model = "sht35"
+address = 0x44
+
+[[sensors.device]]
+id = "co2"
+model = "scd41"
+address = 0x62
+pressure_from = "baro"
+auto_calibration = true
+
+[[sensors.device]]
+id = "baro"
+model = "bmp581"
+address = 0x47
+
+[sensors.display]
+temperature = "room"
+humidity = "room"
+co2 = "co2"
+pressure = "baro"
+"#;
+
+    #[test]
+    fn sensors_parse() {
+        let mut c = AppConfig::from_toml_str(SENSORS, Path::new("x.toml")).unwrap();
+        c.normalize();
+        let s = c.sensors.as_ref().unwrap();
+        assert_eq!(s.device.len(), 3);
+        assert_eq!(s.device[0].address, 0x44);
+        assert_eq!(s.device[1].model, SensorModel::Scd41);
+        assert_eq!(s.device[1].pressure_from.as_deref(), Some("baro"));
+        assert_eq!(s.display.source(Quantity::Co2), Some("co2"));
+        assert_eq!(s.stale_seconds, 60);
+        assert!(AppConfig::default().sensors.is_none(), "off unless configured");
+    }
+
+    #[test]
+    fn sensors_stale_limit_follows_interval() {
+        let mut c = AppConfig::from_toml_str(
+            &SENSORS.replace("interval_seconds = 1", "interval_seconds = 30\nstale_seconds = 10"),
+            Path::new("x.toml"),
+        )
+        .unwrap();
+        c.normalize();
+        assert_eq!(c.sensors.unwrap().stale_seconds, 90);
+    }
+
+    #[test]
+    fn sensors_errors_are_rejected() {
+        let bad = |from: &str, to: &str| {
+            let toml = SENSORS.replacen(from, to, 1);
+            assert_ne!(toml, SENSORS, "pattern {from:?} not found");
+            AppConfig::from_toml_str(&toml, Path::new("x.toml"))
+                .unwrap_err()
+                .to_string()
+        };
+        assert!(bad("model = \"sht35\"", "model = \"dht22\"").contains("dht22"));
+        assert!(bad("address = 0x44", "address = 0x200").contains("形式"));
+        assert!(bad("address = 0x44", "address = 0x03").contains("範囲外"));
+        assert!(bad("address = 0x44", "address = 0x62").contains("重複"));
+        assert!(bad("id = \"co2\"", "id = \"room\"").contains("重複"));
+        assert!(bad("id = \"room\"", "id = \"my room\"").contains("英数字"));
+        assert!(bad("co2 = \"co2\"", "co2 = \"room\"").contains("CO2を測れません"));
+        assert!(bad("pressure = \"baro\"", "pressure = \"nope\"").contains("ありません"));
+        assert!(bad("pressure_from = \"baro\"", "pressure_from = \"room\"").contains("気圧を測れません"));
+        assert!(bad("interval_seconds = 1", "interval_seconds = 0").contains("interval_seconds"));
+        assert!(bad("address = 0x47", "address = 0x47\nauto_calibration = false").contains("scd41"));
+        let empty = AppConfig::from_toml_str("[sensors]\n", Path::new("x.toml")).unwrap_err();
+        assert!(empty.to_string().contains("1 つもありません"));
     }
 }

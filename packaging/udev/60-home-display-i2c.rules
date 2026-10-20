@@ -1,0 +1,3 @@
+# Indoor sensors (docs/sensors.md): let the "i2c" group open /dev/i2c-*.
+# Raspberry Pi OS already does this; plain Debian leaves the nodes root-only.
+SUBSYSTEM=="i2c-dev", GROUP="i2c", MODE="0660"

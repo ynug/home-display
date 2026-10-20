@@ -109,6 +109,23 @@ pub fn calendar(v: &view::CalendarView) -> ui::CalendarView {
     }
 }
 
+pub fn indoor(v: &view::IndoorView) -> ui::IndoorView {
+    ui::IndoorView {
+        items: model(
+            v.items
+                .iter()
+                .map(|i| ui::IndoorItem {
+                    label: s(&i.label),
+                    value: s(&i.value),
+                    unit: s(&i.unit),
+                    level: i.level,
+                    dim: i.dim,
+                })
+                .collect(),
+        ),
+    }
+}
+
 pub fn weather(v: &view::WeatherView) -> ui::WeatherView {
     ui::WeatherView {
         state: panel(v.state),
@@ -236,6 +253,17 @@ pub fn radar(v: &view::RadarView, decoding: bool) -> ui::RadarView {
     }
 }
 
+fn diag_row(r: &view::DiagRowView) -> ui::DiagRow {
+    ui::DiagRow {
+        name: s(&r.name),
+        health: health(r.health),
+        origin: s(&r.origin),
+        last_success: s(&r.last_success),
+        next: s(&r.next),
+        error: s(&r.error),
+    }
+}
+
 pub fn settings(v: &view::SettingsView) -> ui::SettingsView {
     ui::SettingsView {
         profile_index: v.profile.index(),
@@ -249,6 +277,7 @@ pub fn settings(v: &view::SettingsView) -> ui::SettingsView {
         radar_zoom: v.radar_zoom as i32,
         radar_zoom_text: s(&v.radar_zoom_text),
         mode_text: s(&v.mode_text),
+        location_text: s(&v.location_text),
         config_path: s(&v.config_path),
         overrides_path: s(&v.overrides_path),
         cache_dir: s(&v.cache_dir),
@@ -256,19 +285,8 @@ pub fn settings(v: &view::SettingsView) -> ui::SettingsView {
         radar_memory: s(&v.radar_memory),
         save_message: s(&v.save_message),
         ical_text: s(&v.ical_text),
-        sources: model(
-            v.sources
-                .iter()
-                .map(|r| ui::DiagRow {
-                    name: s(&r.name),
-                    health: health(r.health),
-                    origin: s(&r.origin),
-                    last_success: s(&r.last_success),
-                    next: s(&r.next),
-                    error: s(&r.error),
-                })
-                .collect(),
-        ),
+        sources: model(v.sources.iter().map(diag_row).collect()),
+        sensors: model(v.sensors.iter().map(diag_row).collect()),
         logs: model(v.logs.iter().map(|l| s(l)).collect()),
     }
 }

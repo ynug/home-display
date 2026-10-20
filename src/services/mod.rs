@@ -125,8 +125,7 @@ pub fn redact_urls(s: &str) -> String {
         .join(" ")
 }
 
-/// Where weather is fetched and the radar is centred. Editable at runtime on
-/// the settings screen.
+/// Where weather is fetched and the radar is centred (from config.toml).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Place {
     pub latitude: f64,
@@ -164,6 +163,8 @@ pub struct Context {
     pub radar_zoom: watch::Receiver<u8>,
     /// Weather location / radar centre (settings screen can change it).
     pub place: watch::Receiver<Place>,
+    /// Latest indoor sensor values, polled by the UI once per second.
+    pub sensors: Arc<crate::sensors::Shared>,
 }
 
 /// Minimum time between two attempts of the same source, even on manual refresh.
@@ -300,8 +301,42 @@ pub fn spawn_all(rt: &tokio::runtime::Handle, ctx: Context) {
         chrono::Duration::days(cfg.holiday.refresh_days as i64 * 4),
     );
 
+    // Indoor sensors: only with a `[sensors]` table. Read on their own thread
+    // (blocking I2C), not on the Tokio runtime.
+    let sensors_provider = cfg.sensors.as_ref().map(|s| {
+        let provider = setup(
+            SourceId::Sensors,
+            Provider::Live,
+            &format!("I2C {}", s.bus),
+            chrono::Duration::seconds(s.stale_seconds as i64),
+        );
+        (s, provider)
+    });
+
     if any_fixture {
         ctx.repo.set_fixture_scenario(Some(scenario.name().to_string()));
+    }
+
+    match sensors_provider {
+        Some((s, Provider::Live)) => {
+            ctx.repo.mark_loading(SourceId::Sensors);
+            if let Err(e) = crate::sensors::spawn(s.clone(), ctx.sensors.clone(), ctx.repo.clone()) {
+                tracing::error!("sensors: cannot start the thread: {e}");
+            }
+        }
+        Some((s, Provider::Fixture)) => {
+            // Stale samples were read ten minutes ago (dimmed on screen).
+            let at = if scenario == fixtures::Scenario::Stale {
+                now - chrono::Duration::minutes(10)
+            } else {
+                now
+            };
+            for d in &s.device {
+                ctx.sensors.set(&d.id, fixtures::sensor_values(scenario, d.model), at);
+            }
+            ctx.repo.update_status(SourceId::Sensors, |st| st.record_success(at));
+        }
+        Some((_, Provider::Disabled)) | None => {}
     }
 
     // ---- Calendar ----
@@ -437,6 +472,7 @@ mod tests {
             radar_progress: Arc::new(radar::Progress::default()),
             radar_zoom,
             place,
+            sensors: crate::sensors::Shared::new(None),
         };
         (ctx, ztx)
     }
