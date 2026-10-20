@@ -19,7 +19,7 @@ use chrono_tz::Tz;
 use slint::{ComponentHandle, Image, ModelRc, Rgb8Pixel, SharedPixelBuffer, VecModel};
 use tokio::sync::{Notify, watch};
 
-use crate::config::{self, AppConfig, DataMode, Paths, Profile, ProfileSettings, UiOverrides};
+use crate::config::{self, AppConfig, DataMode, Paths, Profile, ProfileSettings};
 use crate::model::RadarData;
 use crate::repository::{Repository, Snapshot};
 use crate::screen::{RotationSettings, Screen, ScreenManager};
@@ -51,8 +51,9 @@ pub struct Options {
 pub struct Loaded {
     pub cfg: AppConfig,
     pub paths: Paths,
-    pub overrides: UiOverrides,
     pub tz: Tz,
+    /// When the config file was read (shown on the settings screen).
+    pub loaded_at: DateTime<Utc>,
 }
 
 pub fn load(opts: &Options) -> anyhow::Result<Loaded> {
@@ -68,13 +69,13 @@ pub fn load(opts: &Options) -> anyhow::Result<Loaded> {
             AppConfig::default()
         }
     };
-    // Precedence: CLI > settings-screen overrides > config file.
-    let overrides = config::load_overrides(&paths.overrides_file());
-    cfg.apply_overrides(&overrides);
-    if overrides.has_legacy_location() {
+    // Precedence: CLI > config file. Saved settings-screen values (≤ v0.0.5)
+    // are no longer read; the Pi installer moves them into config.toml.
+    let legacy = paths.legacy_overrides_file();
+    if legacy.exists() {
         tracing::warn!(
-            "{}: location keys are ignored; set [location] / [radar] in config.toml (install-raspberry-pi.sh moves them)",
-            paths.overrides_file().display()
+            "{} is ignored; settings live in config.toml only (install-raspberry-pi.sh moves them)",
+            legacy.display()
         );
     }
     cfg.normalize();
@@ -100,8 +101,8 @@ pub fn load(opts: &Options) -> anyhow::Result<Loaded> {
     Ok(Loaded {
         cfg,
         paths,
-        overrides,
         tz,
+        loaded_at: Utc::now(),
     })
 }
 
@@ -110,6 +111,15 @@ fn default_font() -> &'static str {
         "Hiragino Sans"
     } else {
         "Noto Sans CJK JP"
+    }
+}
+
+fn mono_font() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "Menlo"
+    } else {
+        // Part of fonts-noto-cjk (a package dependency).
+        "Noto Sans Mono CJK JP"
     }
 }
 
@@ -150,24 +160,20 @@ pub struct Controller {
     ui: slint::Weak<MainWindow>,
     cfg: AppConfig,
     paths: Paths,
-    overrides: UiOverrides,
     tz: Tz,
     snap: Snapshot,
     screens: ScreenManager,
     profile_settings: ProfileSettings,
-    profile_tx: watch::Sender<ProfileSettings>,
-    wake: Arc<Notify>,
     rt: tokio::runtime::Handle,
     last: LastViews,
     radar: RadarImages,
-    save_message: String,
+    loaded_at: DateTime<Utc>,
     /// Screenshot mode: decode synchronously, no event loop available.
     sync_decode: bool,
     last_minute: Option<i64>,
     /// Radar download progress (shared with the fetch task).
     radar_progress: Arc<services::radar::Progress>,
     last_progress: Option<services::radar::ProgressSnapshot>,
-    zoom_tx: watch::Sender<u8>,
     /// Indoor sensors: written by the sensor thread, polled by `tick`.
     sensors: Arc<crate::sensors::Shared>,
     sensor_state: crate::sensors::State,
@@ -400,7 +406,6 @@ impl Controller {
                 _ => "無効".into(),
             },
             rotation_enabled: rs.enabled,
-            rotation_paused: self.screens.is_paused(),
             overview_seconds: rs.overview.as_secs() as u32,
             radar_seconds: rs.radar.map(|d| d.as_secs() as u32).unwrap_or(0),
             radar_auto_seconds: self.screens.radar_dwell().as_secs_f32().round() as u32,
@@ -426,7 +431,7 @@ impl Controller {
                 .as_ref()
                 .map(|p| p.display().to_string())
                 .unwrap_or_else(|| "（なし — 組み込みの既定値）".into()),
-            overrides_path: self.paths.overrides_file().display().to_string(),
+            loaded_at: view::day_hm(self.loaded_at, self.tz, cx.now),
             cache_dir: self.paths.cache_dir.display().to_string(),
             version: format!("v{}", env!("CARGO_PKG_VERSION")),
             radar_memory: format!(
@@ -436,7 +441,6 @@ impl Controller {
                 self.radar.count,
                 self.radar.bytes as f64 / 1_048_576.0
             ),
-            save_message: self.save_message.clone(),
             sources: view::diag_rows(cx),
             sensors: view::sensor_rows(&self.sensor_state, self.snap.fixture_scenario.is_some(), cx.now),
             logs: diag::recent().into_iter().take(10).collect(),
@@ -533,83 +537,13 @@ impl Controller {
         self.refresh();
     }
 
-    // ───────────── user actions ─────────────
+    // ───────────── keyboard ─────────────
 
-    fn set_profile(&mut self, p: Profile) {
-        if p == self.cfg.display.profile {
-            return;
-        }
-        match self.cfg.profile_settings(p) {
-            Ok(ps) => {
-                self.cfg.display.profile = p;
-                self.profile_settings = ps;
-                self.overrides.profile = Some(p);
-                let _ = self.profile_tx.send(ps);
-                self.update_radar_dwell();
-                if let Some(ui) = self.window() {
-                    ui.global::<ui::Theme>().set_effects(ps.visual_effects);
-                    ui.set_radar_frame_ms(ps.radar_frame_ms as i32);
-                }
-                // Re-decode with the new frame budget.
-                self.clear_radar_images();
-                self.sync_radar_images();
-                self.last = LastViews::default();
-                self.save_message = format!("プロファイルを {} に変更しました（未保存）", p.name());
-                tracing::info!("profile → {}", p.name());
-            }
-            Err(e) => self.save_message = e.to_string(),
-        }
-    }
-
-    fn update_rotation(&mut self, f: impl FnOnce(&mut config::RotationConfig)) {
-        f(&mut self.cfg.rotation);
-        self.cfg.rotation.overview_seconds = config::clamp_seconds(self.cfg.rotation.overview_seconds);
-        self.cfg.rotation.radar_seconds = config::clamp_radar_seconds(self.cfg.rotation.radar_seconds);
-        self.overrides.rotation_enabled = Some(self.cfg.rotation.enabled);
-        self.overrides.overview_seconds = Some(self.cfg.rotation.overview_seconds);
-        self.overrides.radar_seconds = Some(self.cfg.rotation.radar_seconds);
-        self.screens.set_settings(rotation(&self.cfg));
-        self.save_message = "変更しました（未保存）".into();
-    }
-
-    /// Change the radar map zoom; the radar is re-fetched for the new area.
-    fn adjust_zoom(&mut self, delta: i32) {
-        let range = config::RADAR_ZOOM_RANGE;
-        let z = (self.cfg.radar.map_zoom as i32 + delta).clamp(*range.start() as i32, *range.end() as i32) as u8;
-        if z == self.cfg.radar.map_zoom {
-            return;
-        }
-        self.cfg.radar.map_zoom = z;
-        self.overrides.radar_zoom = Some(z);
-        let _ = self.zoom_tx.send(z);
-        let (lat, _) = self.cfg.radar_center();
-        self.save_message = format!(
-            "地図の縮尺を {z}（横幅 約{:.0}km）に変更しました。雨雲を取得し直します（未保存）",
-            config::radar_view_width_km(lat, z)
-        );
-        tracing::info!("radar zoom → {z}");
-    }
-
-    /// ± on the radar dwell; from "auto" it starts at the current automatic value.
-    fn adjust_radar(&mut self, delta: &str) {
-        let auto = self.screens.radar_dwell().as_secs_f32().round() as u32;
-        self.update_rotation(|r| {
-            if r.radar_seconds == 0 {
-                r.radar_seconds = auto;
-            }
-            Self::adjust(&mut r.radar_seconds, delta);
-        });
-    }
-
-    fn adjust(v: &mut u32, delta: &str) {
-        let d: i64 = delta.parse().unwrap_or(0);
-        *v = (*v as i64 + d).clamp(5, 600) as u32;
-    }
-
+    /// Only two keys exist: Ctrl+Q (quit) and S (settings / diagnostics,
+    /// read-only). Settings are changed in config.toml, never on screen.
     pub fn action(&mut self, action: &str) {
         let now = Instant::now();
         self.screens.touch(now);
-        let in_settings = self.screens.current() == Screen::Settings;
         let changed = match action {
             "quit" => {
                 tracing::info!("quit requested from the keyboard");
@@ -617,86 +551,9 @@ impl Controller {
                 let _ = slint::quit_event_loop();
                 None
             }
-            "key:1" => self.screens.show(Screen::Overview, now),
-            "key:2" => self.screens.show(Screen::Radar, now),
-            "key:3" | "key:s" => {
-                if in_settings {
-                    self.screens.show(Screen::Overview, now)
-                } else {
-                    self.screens.show(Screen::Settings, now)
-                }
-            }
-            "key:escape" => self.screens.show(Screen::Overview, now),
-            "key:next" | "key:prev" => self.screens.next(now),
-            "key:space" => {
-                let paused = self.screens.toggle_pause(now);
-                tracing::info!("rotation {}", if paused { "paused" } else { "resumed" });
-                None
-            }
-            "key:u" | "refresh" => {
-                self.wake.notify_waiters();
-                self.save_message = "データの再取得を要求しました".into();
-                None
-            }
-            "key:p" if in_settings => {
-                self.set_profile(self.cfg.display.profile.next());
-                None
-            }
-            "key:a" | "rotation:toggle" => {
-                self.update_rotation(|r| r.enabled = !r.enabled);
-                None
-            }
-            "key:[" => {
-                self.update_rotation(|r| Self::adjust(&mut r.overview_seconds, "-5"));
-                None
-            }
-            "key:]" => {
-                self.update_rotation(|r| Self::adjust(&mut r.overview_seconds, "5"));
-                None
-            }
-            "key:-" => {
-                self.adjust_radar("-5");
-                None
-            }
-            "key:=" => {
-                self.adjust_radar("5");
-                None
-            }
-            "key:," | "zoom:-1" => {
-                self.adjust_zoom(-1);
-                None
-            }
-            "key:." | "zoom:+1" => {
-                self.adjust_zoom(1);
-                None
-            }
-            "key:0" | "radar:auto" => {
-                self.update_rotation(|r| r.radar_seconds = 0);
-                None
-            }
-            "key:w" | "save" => {
-                let path = self.paths.overrides_file();
-                self.save_message = match config::save_overrides(&path, &self.overrides) {
-                    Ok(()) => format!("保存しました: {}", path.display()),
-                    Err(e) => {
-                        tracing::warn!("saving overrides failed: {e}");
-                        format!("保存できませんでした: {e}")
-                    }
-                };
-                None
-            }
-            other => {
-                if let Some(p) = other.strip_prefix("profile:").and_then(Profile::parse) {
-                    self.set_profile(p);
-                } else if let Some(d) = other.strip_prefix("overview:") {
-                    let d = d.to_owned();
-                    self.update_rotation(|r| Self::adjust(&mut r.overview_seconds, &d));
-                } else if let Some(d) = other.strip_prefix("radar:") {
-                    let d = d.to_owned();
-                    self.adjust_radar(&d);
-                }
-                None
-            }
+            "key:s" if self.screens.current() == Screen::Settings => self.screens.show(Screen::Overview, now),
+            "key:s" => self.screens.show(Screen::Settings, now),
+            _ => None,
         };
         if changed.is_some() {
             self.apply_screen();
@@ -710,13 +567,13 @@ impl Controller {
 struct Runtime {
     rt: tokio::runtime::Runtime,
     repo: Arc<Repository>,
-    wake: Arc<Notify>,
     radar_progress: Arc<services::radar::Progress>,
     sensors: Arc<crate::sensors::Shared>,
-    profile_tx: watch::Sender<ProfileSettings>,
-    zoom_tx: watch::Sender<u8>,
-    /// Never changes now that the location is set in config.toml only, but
-    /// must stay alive: sources stop when the place channel closes.
+    /// Profile, zoom and place never change at run time (settings come from
+    /// config.toml only), but the senders must stay alive: sources stop when
+    /// their channels close.
+    _profile_tx: watch::Sender<ProfileSettings>,
+    _zoom_tx: watch::Sender<u8>,
     _place_tx: watch::Sender<services::Place>,
 }
 
@@ -756,11 +613,10 @@ fn start_backend(loaded: &Loaded, profile: ProfileSettings) -> anyhow::Result<Ru
     Ok(Runtime {
         rt,
         repo,
-        wake,
         radar_progress,
         sensors,
-        profile_tx,
-        zoom_tx,
+        _profile_tx: profile_tx,
+        _zoom_tx: zoom_tx,
         _place_tx: place_tx,
     })
 }
@@ -794,22 +650,18 @@ fn make_controller(
         ui: ui.as_weak(),
         cfg: loaded.cfg,
         paths: loaded.paths,
-        overrides: loaded.overrides,
         tz: loaded.tz,
         snap: Snapshot::default(),
         screens,
         profile_settings: profile,
-        profile_tx: backend.profile_tx.clone(),
-        wake: backend.wake.clone(),
         rt: backend.rt.handle().clone(),
         last: LastViews::default(),
         radar: RadarImages::default(),
-        save_message: String::new(),
+        loaded_at: loaded.loaded_at,
         sync_decode,
         last_minute: None,
         radar_progress: backend.radar_progress.clone(),
         last_progress: None,
-        zoom_tx: backend.zoom_tx.clone(),
         sensor_state: backend.sensors.snapshot(),
         sensors: backend.sensors.clone(),
     }));
@@ -833,12 +685,51 @@ fn configure_scale(opts: &Options, cfg: &AppConfig) {
     }
 }
 
+/// Only Ctrl+Q works here; `home-display config edit` restarts the service
+/// once the file is fixed.
+fn show_config_error(opts: &Options, path: &str, message: &str) -> anyhow::Result<()> {
+    configure_scale(opts, &AppConfig::default());
+    let ui = MainWindow::new().context("creating the window (is a display/GPU available?)")?;
+    ui.set_font_family(default_font().into());
+    ui.set_mono_font_family(mono_font().into());
+    ui.set_config_path(path.into());
+    ui.set_config_error(message.into());
+    ui.on_action(|a| {
+        if a == "quit" {
+            QUIT_REQUESTED.store(true, Ordering::Relaxed);
+            let _ = slint::quit_event_loop();
+        }
+    });
+    if opts.fullscreen {
+        ui.window().set_fullscreen(true);
+    } else if cfg!(feature = "desktop") && !cfg!(feature = "kms") {
+        ui.set_fixed_size(true);
+    }
+    ui.run().context("running the UI event loop")
+}
+
 pub fn run(opts: Options) -> anyhow::Result<()> {
     if let Some(now) = opts.now {
         clock::set_fake_now(now);
     }
-    let loaded = load(&opts)?;
-    if opts.screenshot.is_some() || opts.screenshot_dir.is_some() {
+    let shot = opts.screenshot.is_some() || opts.screenshot_dir.is_some();
+    let loaded = match load(&opts) {
+        Ok(l) => l,
+        // A broken config.toml: show what is wrong on the display and wait
+        // instead of exiting (systemd would restart into a black screen).
+        Err(e) => {
+            tracing::error!("config: {e:#}");
+            let path = Paths::discover(opts.config.clone()).config_file;
+            let path = path.map(|p| p.display().to_string()).unwrap_or_default();
+            let message = format!("{e:#}");
+            return if shot {
+                screenshot::config_error(&opts, &path, &message)
+            } else {
+                show_config_error(&opts, &path, &message)
+            };
+        }
+    };
+    if shot {
         return screenshot::run(opts, loaded);
     }
     configure_scale(&opts, &loaded.cfg);
@@ -931,6 +822,30 @@ mod screenshot {
         img.save(path).with_context(|| format!("writing {}", path.display()))?;
         println!("wrote {}", path.display());
         Ok(())
+    }
+
+    /// The "config.toml has an error" screen (README / tests).
+    pub fn config_error(opts: &Options, path: &str, message: &str) -> anyhow::Result<()> {
+        let window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
+        window.set_size(slint::PhysicalSize::new(W, H));
+        slint::platform::set_platform(Box::new(ShotPlatform {
+            window: window.clone(),
+            start: Instant::now(),
+            skew: Rc::new(std::cell::Cell::new(Duration::ZERO)),
+        }))
+        .map_err(|e| anyhow::anyhow!("platform: {e:?}"))?;
+        let ui = MainWindow::new()?;
+        ui.set_font_family(default_font().into());
+        ui.set_mono_font_family(mono_font().into());
+        ui.set_config_path(path.into());
+        ui.set_config_error(message.into());
+        ui.show()?;
+        let out = match (&opts.screenshot, &opts.screenshot_dir) {
+            (Some(p), _) => p.clone(),
+            (None, Some(d)) => d.join("config-error.png"),
+            (None, None) => unreachable!("screenshot mode"),
+        };
+        render(&window, &out)
     }
 
     pub fn run(opts: Options, loaded: Loaded) -> anyhow::Result<()> {

@@ -3,6 +3,7 @@ use std::process::ExitCode;
 
 use home_display::app::{self, Options};
 use home_display::config::Profile;
+use home_display::config_cmd;
 use home_display::fixtures::Scenario;
 use home_display::screen::Screen;
 
@@ -11,6 +12,11 @@ home-display — always-on home information display
 
 USAGE:
     home-display [OPTIONS]
+    home-display config edit [--config FILE] [--no-restart]
+                             Edit config.toml (like visudo): checked when the editor
+                             exits, replaced only if valid, then the service restarts
+    home-display config show [--config FILE]   Print every effective value (defaults too)
+    home-display config check [--config FILE]  Validate (same as --check-config)
 
 OPTIONS:
     --config <FILE>          Config file (default: ~/.config/home-display/config.toml,
@@ -34,8 +40,8 @@ OPTIONS:
     -h, --help               Print this help
 
 KEYS:
-    1 overview · 2 radar · S settings · Space pause rotation · U refresh · Esc back
-    (settings) P profile · A rotation · [ ] overview time · - = radar time · W save
+    S settings / diagnostics (read-only) · Ctrl+Q quit (the service stays stopped)
+    Settings are changed only in config.toml: sudo home-display config edit
 ";
 
 fn parse_now(s: &str, tz: chrono_tz::Tz) -> Option<chrono::DateTime<chrono::Utc>> {
@@ -54,13 +60,26 @@ enum Command {
     Run,
     CheckConfig,
     ReadSensors,
+    ConfigShow,
+    ConfigEdit { restart: bool },
 }
 
 fn parse_args() -> Result<Option<(Options, Command)>, String> {
     let mut opts = Options::default();
     let mut command = Command::Run;
     let mut now_raw: Option<String> = None;
-    let mut args = std::env::args().skip(1);
+    let mut args = std::env::args().skip(1).peekable();
+    // `home-display config edit|show|check [--config FILE] [--no-restart]`
+    let mut restart = true;
+    if args.peek().map(String::as_str) == Some("config") {
+        args.next();
+        command = match args.next().as_deref() {
+            Some("edit") => Command::ConfigEdit { restart: true },
+            Some("show") => Command::ConfigShow,
+            Some("check") => Command::CheckConfig,
+            other => return Err(format!("usage: home-display config edit|show|check (got {other:?})")),
+        };
+    }
     let need = |args: &mut dyn Iterator<Item = String>, flag: &str| args.next().ok_or(format!("{flag} needs a value"));
     while let Some(a) = args.next() {
         match a.as_str() {
@@ -117,8 +136,12 @@ fn parse_args() -> Result<Option<(Options, Command)>, String> {
             }
             "--check-config" => command = Command::CheckConfig,
             "--read-sensors" => command = Command::ReadSensors,
+            "--no-restart" => restart = false,
             other => return Err(format!("unknown argument {other:?} (see --help)")),
         }
+    }
+    if let Command::ConfigEdit { .. } = command {
+        command = Command::ConfigEdit { restart };
     }
     if let Some(raw) = now_raw {
         // Interpret local times in the configured zone.
@@ -159,87 +182,18 @@ fn main() -> ExitCode {
     if command == Command::ReadSensors {
         return read_sensors(&opts);
     }
-    if command == Command::CheckConfig {
-        return match app::load(&opts).and_then(|l| {
-            for p in Profile::ALL {
-                l.cfg.profile_settings(p)?;
-            }
-            let ical = match l.cfg.resolve_ical_url() {
-                Ok(Some(_)) => "configured (hidden)",
-                Ok(None) => "not configured",
-                Err(_) => "ERROR (unreadable)",
-            };
-            println!(
-                "config OK: {}\n  mode: {:?}\n  profile: {}\n  timezone: {}\n  iCal URL: {}\n  cache: {}\n  state: {}",
-                l.paths
-                    .config_file
-                    .as_ref()
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_else(|| "(built-in defaults)".into()),
-                l.cfg.mode,
-                l.cfg.display.profile.name(),
-                l.tz,
-                ical,
-                l.paths.cache_dir.display(),
-                l.paths.state_dir.display(),
-            );
-            let c = &l.cfg;
-            let ps = c.profile_settings(c.display.profile)?;
-            let (rlat, rlon) = c.radar_center();
-            let fmt = home_display::config::fmt_secs;
-            println!(
-                "  location: {} ({:.4}, {:.4})\n  radar centre: ({rlat:.4}, {rlon:.4}) zoom {}\n  \
-                 rotation: {} (overview {}s / radar {})\n  refresh: calendar {} · weather {} · earthquake {} · \
-                 radar {} · holiday {}",
-                c.location.name,
-                c.location.latitude,
-                c.location.longitude,
-                c.radar.map_zoom,
-                if c.rotation.enabled { "on" } else { "off" },
-                c.rotation.overview_seconds,
-                match c.rotation.radar() {
-                    Some(d) => format!("{}s", d.as_secs()),
-                    None => "auto (animation ×2)".into(),
-                },
-                fmt(c.calendar.refresh_minutes * 60),
-                fmt(c.weather.refresh_minutes * 60),
-                fmt(c.earthquake.refresh_seconds),
-                fmt(c.radar_refresh(&ps).as_secs()),
-                fmt(c.holiday.refresh_days * 86_400),
-            );
-            match &c.sensors {
-                Some(s) => {
-                    println!(
-                        "  sensors: {} every {}s (stale after {}s)",
-                        s.bus, s.interval_seconds, s.stale_seconds
-                    );
-                    for d in &s.device {
-                        println!("    {} = {} @ 0x{:02X}", d.id, d.model.name(), d.address);
-                    }
-                    let shown: Vec<String> = home_display::config::Quantity::ALL
-                        .iter()
-                        .filter_map(|q| s.display.source(*q).map(|id| format!("{} ← {id}", q.key())))
-                        .collect();
-                    println!(
-                        "    display: {}",
-                        if shown.is_empty() {
-                            "(none)".into()
-                        } else {
-                            shown.join(", ")
-                        }
-                    );
-                }
-                None => println!("  sensors: off"),
-            }
-            println!("  settings screen overrides: {}", l.paths.overrides_file().display());
-            Ok(())
-        }) {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(e) => {
-                eprintln!("config error: {e:#}");
-                ExitCode::FAILURE
-            }
-        };
+    let done = |r: anyhow::Result<()>| match r {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("error: {e:#}");
+            ExitCode::FAILURE
+        }
+    };
+    match command {
+        Command::CheckConfig => return done(config_cmd::check(&opts)),
+        Command::ConfigShow => return done(config_cmd::show(&opts)),
+        Command::ConfigEdit { restart } => return done(config_cmd::edit(&opts, restart)),
+        Command::Run | Command::ReadSensors => {}
     }
     match app::run(opts) {
         Ok(()) if app::quit_requested() => ExitCode::from(app::QUIT_EXIT_CODE),

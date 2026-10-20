@@ -39,6 +39,11 @@ export component MainWindow inherits Window {
     in property <[image]> radar-frames;
     in property <int> radar-frame-ms: 700;
     in property <SettingsView> settings;
+    // Set instead of everything else when config.toml cannot be used.
+    in property <string> config-error;
+    in property <string> config-path;
+    // Monospace, so the "^^^" under a TOML error lines up.
+    in property <string> mono-font-family;
 
     // Every key press funnels into one callback so
     // that Rust's ScreenManager remains the single owner of navigation state.
@@ -72,18 +77,42 @@ export component MainWindow inherits Window {
         data: root.settings;
     }
 
-    // Keyboard input: the only way to change settings.
+    // A broken config.toml: say what is wrong and how to fix it, and wait
+    // (rather than exiting into a restart loop with a black screen).
+    if root.config-error != "": Rectangle {
+        background: Theme.background;
+        VerticalLayout {
+            padding: 90px;
+            spacing: 26px;
+            alignment: center;
+            Text { text: "設定ファイルにエラーがあります"; font-size: 52px; font-weight: 600; color: Theme.warn; }
+            Text { text: root.config-path; font-size: 24px; color: Theme.text-secondary; }
+            Rectangle {
+                border-radius: Theme.radius-small;
+                background: Theme.surface-sunken;
+                VerticalLayout {
+                    padding: 30px;
+                    Text { text: root.config-error; font-size: 22px; font-family: root.mono-font-family; color: Theme.text-primary; wrap: word-wrap; }
+                }
+            }
+            Text { text: "SSH で直してください:  sudo home-display config edit"; font-size: 30px; color: Theme.accent; }
+            Text {
+                text: "保存すると自動でチェックし、問題がなければ再起動して表示を再開します。Ctrl+Q で終了します。";
+                font-size: 22px;
+                color: Theme.text-tertiary;
+                wrap: word-wrap;
+            }
+        }
+    }
+
+    // Keyboard: only Ctrl+Q (quit) and S (settings / diagnostics, read-only).
+    // Settings are changed in config.toml, never on screen, so a keyboard
+    // plugged in for maintenance cannot change anything by accident.
     keys := FocusScope {
         key-pressed(event) => {
-            // Ctrl+Q quits (KMS may report the control character U+0011 instead of "q").
+            // KMS may report Ctrl+Q as the control character U+0011 instead of "q".
             if (event.modifiers.control && (event.text.to-lowercase() == "q" || event.text == "\u{11}")) { root.action("quit"); return accept; }
-            if (event.text == Key.Escape) { root.action("key:escape"); return accept; }
-            if (event.text == Key.F2) { root.action("key:s"); return accept; }
-            if (event.text == Key.F5) { root.action("key:u"); return accept; }
-            if (event.text == Key.RightArrow) { root.action("key:next"); return accept; }
-            if (event.text == Key.LeftArrow) { root.action("key:prev"); return accept; }
-            if (event.text == " ") { root.action("key:space"); return accept; }
-            root.action("key:" + event.text.to-lowercase());
+            if (!event.modifiers.control && !event.modifiers.alt && event.text.to-lowercase() == "s") { root.action("key:s"); return accept; }
             accept
         }
     }

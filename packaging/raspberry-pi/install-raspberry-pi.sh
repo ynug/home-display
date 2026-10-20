@@ -56,7 +56,7 @@ usage() {
   --no-start          インストール後にサービスを起動しない
   -h, --help          このヘルプ
 
-再実行すると新しいリリースに更新します。設定（config.toml・iCal URL・画面で保存した値）は保持されます。
+再実行すると新しいリリースに更新します。設定（config.toml・iCal URL）は保持されます。
 アンインストール: sudo apt purge home-display
 EOF
 }
@@ -339,16 +339,18 @@ toml_str() {
     printf '"%s"' "${v//\"/\\\"}"
 }
 
-# Older versions kept the location in ui-overrides.toml (written by the
-# settings screen and this script). It is no longer read: move it to config.toml.
-migrate_legacy_location() {
+# v0.0.5 and older saved settings-screen values (and the location) in
+# ui-overrides.toml. Settings now live in config.toml only: move them there
+# once and remove the old file.
+migrate_legacy_overrides() {
     [ -f "$OVERRIDES" ] || return 0
-    local name loc rc rcn lat lon coords
+    local name loc rc rcn lat lon coords v
+    # raw TOML value of a top-level key in the old file ("" if absent)
+    raw() { sed -n "s/^$1[[:space:]]*=[[:space:]]*\(.*[^[:space:]]\)[[:space:]]*\$/\1/p" "$OVERRIDES" | head -n 1; }
     name=$(sed -n 's/^location_name[[:space:]]*=[[:space:]]*"\(.*\)"[[:space:]]*$/\1/p' "$OVERRIDES")
     loc=$(sed -n 's/^location[[:space:]]*=[[:space:]]*"\(.*\)"[[:space:]]*$/\1/p' "$OVERRIDES")
     rc=$(sed -n 's/^radar_center[[:space:]]*=[[:space:]]*"\(.*\)"[[:space:]]*$/\1/p' "$OVERRIDES")
     rcn=$(sed -n 's/^radar_center_name[[:space:]]*=[[:space:]]*"\(.*\)"[[:space:]]*$/\1/p' "$OVERRIDES")
-    grep -Eq '^(location_name|location|radar_center|radar_center_name)[[:space:]]*=' "$OVERRIDES" || return 0
 
     # Values in the file are already TOML-escaped; keep them as they are.
     if coords=$(parse_coords "$loc"); then
@@ -359,18 +361,18 @@ migrate_legacy_location() {
         lat=${coords%%,*}; lon=${coords##*, }
         set_toml "$CONFIG_FILE" radar "latitude=$lat" "longitude=$lon" ${rcn:+"center_name=\"$rcn\""}
     fi
+    v=$(raw profile);          [ -n "$v" ] && set_toml "$CONFIG_FILE" display "profile=$v"
+    v=$(raw rotation_enabled); [ -n "$v" ] && set_toml "$CONFIG_FILE" rotation "enabled=$v"
+    v=$(raw overview_seconds); [ -n "$v" ] && set_toml "$CONFIG_FILE" rotation "overview_seconds=$v"
+    v=$(raw radar_seconds);    [ -n "$v" ] && set_toml "$CONFIG_FILE" rotation "radar_seconds=$v"
+    v=$(raw radar_zoom);       [ -n "$v" ] && set_toml "$CONFIG_FILE" radar "map_zoom=$v"
 
-    local tmp
-    tmp=$(mktemp "$STATE_DIR/.ui-overrides.XXXXXX")
-    grep -Ev '^(location_name|location|radar_center|radar_center_name)[[:space:]]*=' "$OVERRIDES" >"$tmp" || true
-    chown "$PKG:$PKG" "$tmp"
-    chmod 0600 "$tmp"
-    mv -f "$tmp" "$OVERRIDES"
-    info "画面で保存していた地点を $CONFIG_FILE に移しました"
+    mv -f "$OVERRIDES" "$OVERRIDES.migrated"
+    info "画面で保存していた設定を $CONFIG_FILE に移しました（元のファイル: $OVERRIDES.migrated）"
 }
 
 configure_location() {
-    migrate_legacy_location
+    migrate_legacy_overrides
     echo "地点: $CONFIG_FILE の [location]"
     sed -n '/^\[location\]/,/^\[/{/^\(name\|latitude\|longitude\)[[:space:]]*=/p}' "$CONFIG_FILE" | sed 's/^/    /'
     ask_yn "地点を変更しますか？" n || return 0
@@ -511,7 +513,28 @@ check_config() {
 
 start_service() {
     systemctl daemon-reload
-    systemctl enable "$PKG" >/dev/null
+    # `systemd.mask=home-display.service` on the kernel command line (a way to
+    # stop a display that cannot be quit) blocks enabling the service.
+    if grep -qw "systemd.mask=$PKG.service" /proc/cmdline 2>/dev/null ||
+        [ "$(systemctl is-enabled "$PKG" 2>/dev/null || true)" = masked-runtime ]; then
+        local cmdline=/boot/firmware/cmdline.txt
+        [ -f "$cmdline" ] || cmdline=/boot/cmdline.txt
+        warn "$PKG は起動時に無効化されています（$cmdline に systemd.mask=$PKG.service があります）"
+        if [ "$ASSUME_YES" = 1 ] || ask_yn "$cmdline から systemd.mask=$PKG.service を削除しますか？（要再起動）" y; then
+            sed -i "s/ *systemd\.mask=$PKG\.service//" "$cmdline"
+            # `systemctl enable` refuses a masked unit; create the link it would create.
+            local unit=/usr/lib/systemd/system/$PKG.service
+            [ -f "$unit" ] || unit=/lib/systemd/system/$PKG.service
+            install -d /etc/systemd/system/multi-user.target.wants
+            ln -sf "$unit" "/etc/systemd/system/multi-user.target.wants/$PKG.service"
+            info "削除しました。再起動後に自動で表示が始まります"
+            NEED_REBOOT=1
+        else
+            die "自動起動できません。$cmdline から systemd.mask=$PKG.service を削除して再起動し、もう一度実行してください"
+        fi
+    else
+        systemctl enable "$PKG" >/dev/null
+    fi
     if [ "$NEED_REBOOT" = 1 ]; then
         if ask_yn "今すぐ再起動しますか？（起動後に自動で表示が始まります）" y; then
             info "再起動します"
@@ -553,9 +576,9 @@ main() {
 完了しました。
   ログ:          journalctl -u $PKG -f
   再起動:        sudo systemctl restart $PKG
-  設定ファイル:  $CONFIG_FILE（編集後は再起動）
+  設定の変更:    sudo home-display config edit（$CONFIG_FILE を編集 → チェック → 再起動）
+  設定の確認:    home-display config show
   iCal URL:      $ENV_FILE（0600、root のみ）
-  画面の保存値:  $OVERRIDES
   センサー確認:  sudo i2cdetect -y 1（0x44 / 0x47 / 0x62 が見えれば接続 OK）
                  sudo systemctl stop $PKG && sudo home-display --config $CONFIG_FILE --read-sensors
   更新:          $UPDATE_CMD

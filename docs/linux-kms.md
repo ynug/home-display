@@ -96,7 +96,7 @@ cargo build --release --no-default-features --features kms-libseat
    ```sh
    sudo -u home-display SLINT_BACKEND=linuxkms-software /usr/bin/home-display --fixture default
    ```
-5. **入力**: キーボードを接続し `1` / `2` / `S` / `Space` / `Esc` / `Ctrl+Q` が効くか（マウス・タッチは無効）。
+5. **入力**: キーボードを接続し `S`（設定・診断画面）と `Ctrl+Q`（終了）が効くか（キーはこの 2 つだけ。マウス・タッチは無効）。
 6. **プロファイル**: `--profile low` と `--profile full` で Radar のコマ数・アニメーション・メモリを比較。
 7. **720p 出力**: `SLINT_DRM_MODE=<720p の番号> SLINT_SCALE_FACTOR=0.6667` でレイアウトが収まるか。
 8. **回転設置**: `SLINT_KMS_ROTATION=90` など。

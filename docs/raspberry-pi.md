@@ -126,7 +126,8 @@ journalctl -u home-display -f          # ログ（iCal URL は出力されませ
 
 ## 5. 更新
 
-同じスクリプトをもう一度実行します。設定（`config.toml`・iCal URL・画面で保存した値）は保持されます。
+同じスクリプトをもう一度実行します。設定（`config.toml`・iCal URL）は保持されます。
+v0.0.5 以前に画面で保存した値（`ui-overrides.toml`）があれば、`config.toml` に移します。
 
 ```sh
 curl -fsSL https://github.com/ynug/home-display/releases/latest/download/install-raspberry-pi.sh | sudo bash -s -- --yes
@@ -136,11 +137,13 @@ curl -fsSL https://github.com/ynug/home-display/releases/latest/download/install
 
 | 変更したいもの | 方法 |
 |---|---|
-| 地点・iCal URL | インストールのコマンドを再実行して質問に答える（地点は `config.toml` の `[location]` を直接編集しても可。[README の「地点」](../README.md#地点)） |
-| プロファイル・表示時間・縮尺など | キーボードで設定画面（`S`）から変えて `W` で保存、または `sudo nano /etc/home-display/config.toml` → `sudo systemctl restart home-display` |
-| 画面で保存した値の確認・修正 | `/var/lib/home-display/ui-overrides.toml` |
+| 地点・プロファイル・表示時間・縮尺・センサーなど | `sudo home-display config edit`（保存すると自動でチェックし、問題がなければ再起動して反映） |
+| iCal URL（秘密） | インストールのコマンドを再実行して質問に答える（`/etc/home-display/home-display.env` に保存） |
+| 今の設定の確認 | `home-display config show`（書いていない項目は既定値で表示）、または画面で `S` |
 
-設定画面で保存した値は `config.toml` より優先されます。
+設定は `config.toml` の 1 ファイルだけで、画面やキーボードでは変更できません。
+全項目が説明・既定値つきでコメントアウトして並んでいるので、変えたい行の `# ` を消して書き換えます
+（最新のテンプレート: `/usr/share/doc/home-display/config.example.toml`）。詳しくは [README の「設定」](../README.md#設定)。
 
 ## 7. 画面の調整
 

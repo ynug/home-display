@@ -1,141 +1,221 @@
-# Home Display configuration (installed as /etc/home-display/config.toml).
-# Every key is optional; missing keys use the built-in defaults shown here.
-# Validate with:  home-display --check-config --config /etc/home-display/config.toml
-# Values saved on the settings screen (S → W: profile, rotation, durations,
-# map zoom, location) override this file; precedence:
-# command line > settings screen (saved) > this file > built-in defaults.
-# The only environment variable used is the secret HOME_DISPLAY_ICAL_URL.
+# Home Display の設定ファイル（/etc/home-display/config.toml）
+#
+# 設定はこのファイルだけです（画面やキーボードでは変更できません）。
+#
+#   変更:  sudo home-display config edit    エディタで開き、保存するとチェックして、
+#                                           問題がなければ置き換えて再起動します
+#   確認:  home-display config show         実際に使われている値（既定値も含む）を表示
+#   検証:  home-display config check
+#
+# 書き方: 全項目を既定値でコメントアウトして並べています。変えたい行の先頭の
+# 「# 」を消して値を書き換えてください。書いていない項目は既定値になります。
+# 項目が増えたときは最新のテンプレートを参照してください:
+#   /usr/share/doc/home-display/config.example.toml
+#
+# 秘密のカレンダー URL（iCal）はここには書きません（[calendar] の説明を参照）。
 
-# "live" fetches real data; "fixture" shows bundled SAMPLE data (labelled on screen).
+# データの取得方法。"live" = 実データ、"fixture" = 同梱のサンプルデータ（画面に明示）
 mode = "live"
-# Scenario used when mode = "fixture" (home-display --list-fixtures).
-fixture_scenario = "default"
+# サンプルデータ（mode = "fixture"）の種類（home-display --list-fixtures で一覧）
+# fixture_scenario = "default"
 
 [location]
-# Set here only (shown read-only on the settings screen). Copy "lat, lon" from
-# Google Maps (right-click a place) — there is no place search.
+# 天気を取得する地点で、雨雲レーダーの中心にもなります。検索機能はありません。
+# Google マップで地点を右クリックすると「緯度, 経度」をコピーできます。
 name = "東京"
 latitude = 35.6812
 longitude = 139.7671
+# 時計・予定・予報に使うタイムゾーン（IANA 名）
 timezone = "Asia/Tokyo"
 
 [display]
-# full | balanced | low   (can also be changed on the settings screen)
-profile = "balanced"
-# Empty = Noto Sans CJK JP on Linux (package fonts-noto-cjk), Hiragino Sans on macOS.
-font_family = ""
-# The UI is designed for 1920x1080 logical pixels. For a 1280x720 output use 0.6667.
+# 表示プロファイル。端末の性能に合わせて雨雲のコマ数や装飾を変えます。
+#   "full"     : 5 分ごと 25 コマ（過去 60 分 + 予測 60 分）、装飾あり
+#   "balanced" : 10 分ごと 13 コマ、装飾あり（Raspberry Pi 4 の目安）
+#   "low"      : 最新の 1 枚だけ（アニメーションなし）、装飾なし
+# 細かい値は下の [profiles.*] で変えられます。
+# profile = "balanced"
+# フォント名。空 = 既定（Linux: Noto Sans CJK JP、macOS: Hiragino Sans）
+# font_family = ""
+# 拡大率。画面は 1920×1080 で設計しています。1280×720 の画面なら 0.6667、
+# 3840×2160 なら 2.0。書かなければ自動（環境変数 SLINT_SCALE_FACTOR があればそれ）。
 # scale_factor = 1.0
-# Show seconds on the clock (redraws the clock once per second).
-show_seconds = true
+# 時計に秒を表示する（毎秒、時計だけ描き直します）
+# show_seconds = true
 
 [rotation]
-enabled = true
-overview_seconds = 20
-# 0 = automatic: the radar animation (past hour → forecast hour) plays twice
-# (≈ 18.5 s on Balanced/Full, 10 s for Low's static image). Rotation waits on
-# Overview until the first radar download has finished.
-radar_seconds = 0
-settings_timeout_seconds = 120
+# Overview と雨雲レーダーを自動で切り替える
+# enabled = true
+# Overview の表示時間（秒、5〜600）
+# overview_seconds = 20
+# 雨雲レーダーの表示時間（秒、5〜600）。0 = 自動（アニメーションが 2 周する長さ。
+# 静止画なら 10 秒）。雨雲の初回取得が終わるまでは Overview のままです。
+# radar_seconds = 0
+# 設定・診断画面（S キー）を操作なしでこの秒数が過ぎたら Overview に戻す
+# settings_timeout_seconds = 120
 
 [calendar]
-# The secret iCal URL is NOT stored here. Provide it via (first match wins):
-#   1. environment variable HOME_DISPLAY_ICAL_URL (e.g. /etc/home-display/home-display.env, mode 0600)
-#   2. systemd credential "ical-url" (LoadCredential=ical-url:/etc/home-display/ical-url)
-#   3. ical_url_file = "/etc/home-display/ical-url"   (file containing only the URL, mode 0600)
-refresh_minutes = 10
-stale_minutes = 60
-horizon_days = 3
+# 秘密の iCal URL はこのファイルに書かないでください。次の順に読みます（先に見つかったもの）:
+#   1. 環境変数 HOME_DISPLAY_ICAL_URL（Pi では /etc/home-display/home-display.env、0600）
+#   2. systemd の credential「ical-url」
+#   3. ical_url_file に書いたファイル（URL だけを書いたファイル、0600 推奨）
+#   4. ical_url（非推奨。このファイルは誰でも読めるため）
+# ical_url_file = "/etc/home-display/ical-url"
+# ical_url = "https://calendar.google.com/calendar/ical/.../basic.ics"
+# 取得間隔（分）。日付が変わった直後にも取り直します。
+# refresh_minutes = 10
+# この時間（分）を過ぎると「古いデータ」と表示（取得間隔の 3 倍未満なら 3 倍に広げます）
+# stale_minutes = 60
+# 繰り返し予定を展開する日数（今日を含む）
+# horizon_days = 3
 
 [weather]
-# live = Open-Meteo (no API key, CC BY 4.0) | fixture | disabled
-provider = "live"
-refresh_minutes = 15
-stale_minutes = 90
+# "live" = Open-Meteo（API キー不要、CC BY 4.0）、"fixture" = サンプル、"disabled" = 表示しない
+# provider = "live"
+# base_url = "https://api.open-meteo.com/v1/forecast"
+# refresh_minutes = 15
+# stale_minutes = 90
 
 [earthquake]
-# live | fixture | disabled
-provider = "live"
-# jma = 気象庁 防災情報XML (official; ~30 MB/day) | p2pquake = P2P地震情報 API
-source = "jma"
-# Use P2P地震情報 automatically when the JMA feed cannot be fetched.
-fallback = true
-refresh_seconds = 60
-stale_minutes = 15
-highlight_hours = 24
+# "live" | "fixture" | "disabled"
+# provider = "live"
+# 取得元。"jma" = 気象庁 防災情報XML（公式、1 日 約 30 MB）、"p2pquake" = P2P地震情報 API
+# source = "jma"
+# 気象庁から取れないとき P2P地震情報に自動で切り替える
+# fallback = true
+# 気象庁の Atom フィード（高頻度 / 長期）と、P2P地震情報の履歴 API
+# jma_feed_url = "https://www.data.jma.go.jp/developer/xml/feed/eqvol.xml"
+# jma_long_feed_url = "https://www.data.jma.go.jp/developer/xml/feed/eqvol_l.xml"
+# base_url = "https://api.p2pquake.net/v2/history"
+# 取得間隔（秒）
+# refresh_seconds = 60
+# stale_minutes = 15
+# これより古い地震（時間）は強調しない
+# highlight_hours = 24
 
 [radar]
-# live | fixture | disabled
-provider = "live"
-# jma = 気象庁 高解像度降水ナウキャスト (observations + 60-min forecast)
-# rainviewer = RainViewer (past only; personal/educational use)
-source = "jma"
-# Use RainViewer automatically when the JMA tiles cannot be fetched.
-fallback = true
-# 5–11 (default 9 ≈ 340 km wide around Tokyo; each step halves/doubles the area).
-# Can also be changed (and saved) on the settings screen with "," / ".".
-map_zoom = 9
-color_scheme = 2
-smooth = true
-stale_minutes = 40
-# Map centre (defaults to [location]); refresh_seconds overrides the profile value.
+# "live" | "fixture" | "disabled"
+# provider = "live"
+# 取得元。"jma" = 気象庁 高解像度降水ナウキャスト（実測 + 1 時間先の予測）、
+# "rainviewer" = RainViewer（実測のみ、個人・教育目的）
+# source = "jma"
+# 気象庁から取れないとき RainViewer に自動で切り替える
+# fallback = true
+# 地図の縮尺（3〜14）。小さいほど広い範囲。9 で東京付近の横幅 約 340 km、1 つ変えると範囲が 2 倍／半分。
+# map_zoom = 9
+# 雨雲の中心を地点と別にする場合（書かなければ [location] が中心）。center_name は画面の表示名。
 # latitude = 34.6937
 # longitude = 135.5023
 # center_name = "大阪"
+# 取得間隔（秒）。書かなければプロファイルの radar_refresh_secs
 # refresh_seconds = 600
-basemap_cache_days = 30
+# stale_minutes = 40
+# 地図タイルを取り直すまでの日数
+# basemap_cache_days = 30
+# 取得先（通常は変更不要）
+# jma_base_url = "https://www.jma.go.jp/bosai/jmatile/data/nowc"
+# index_url = "https://api.rainviewer.com/public/weather-maps.json"
+# basemap_url = "https://cyberjapandata.gsi.go.jp/xyz/blank/{z}/{x}/{y}.png"
+# RainViewer の配色（2 = Universal Blue）となめらか表示
+# color_scheme = 2
+# smooth = true
 
 [holiday]
-# live = Cabinet Office CSV, cached locally; bundled snapshot used until first download.
-provider = "live"
-refresh_days = 7
+# "live" = 内閣府の祝日 CSV（初回取得までは同梱のデータ）
+# provider = "live"
+# url = "https://www8.cao.go.jp/chosei/shukujitsu/syukujitsu.csv"
+# refresh_days = 7
 
-# Per-profile tuning. Any field may be overridden; the rest keep their defaults.
-# [profiles.full]
-# radar_frames = 13         # observed frames incl. the latest (60 min at 5-min steps)
-# radar_step_minutes = 5    # 5 or 10 (RainViewer fallback is always 10)
-# radar_forecast_frames = 12  # JMA forecast frames after "now" (0 = none, max 12)
-# radar_frame_ms = 300      # 0 = no animation
+# ── プロファイルごとの細かい値 ──
+# 使っているプロファイル（[display] profile）の値だけが使われます。各値は既定値です。
+#   radar_frames          : 実測のコマ数（最新を含む）。1 = 最新の 1 枚だけ
+#   radar_step_minutes    : コマの間隔（分）。5 か 10（RainViewer は常に 10）
+#   radar_forecast_frames : 予測のコマ数（気象庁のみ、0〜12）
+#   radar_frame_ms        : 1 コマの表示時間（ミリ秒）。0 = アニメーションなし
+#   radar_refresh_secs    : 雨雲の取得間隔（秒）
+#   radar_scale           : 雨雲画像の解像度（1376×1012 に対する倍率、0.25〜1.5）
+#   keep_radar_decoded    : 雨雲画面を出していない間も展開した画像を保持する（メモリを使う）
+#   visual_effects        : グラデーション・影
+#   max_events            : 今日の予定の表示件数（次の予定の下に並べる数）
+#   hourly_cells          : 天気カードの時間別予報のマス数
+
+[profiles.full]
+# radar_frames = 13
+# radar_step_minutes = 5
+# radar_forecast_frames = 12
+# radar_frame_ms = 300
 # radar_refresh_secs = 300
-# radar_scale = 1.0         # composite resolution relative to 1376x1012
-# keep_radar_decoded = true # keep decoded frames while the radar screen is hidden
-# visual_effects = true     # gradients / shadows
-# max_events = 2         # today's rows below the next event (tomorrow is shown below)
+# radar_scale = 1.0
+# keep_radar_decoded = true
+# visual_effects = true
+# max_events = 2
 # hourly_cells = 8
-#
-# [profiles.low]
-# radar_frames = 1
-# radar_frame_ms = 0
-# visual_effects = false
 
-# Indoor I2C sensors (Raspberry Pi: enable I2C with `raspi-config nonint do_i2c 0`).
-# Off unless this table exists. Details: /usr/share/doc/home-display/sensors.md
-# Check wiring and addresses with:  home-display --read-sensors
+[profiles.balanced]
+# radar_frames = 7
+# radar_step_minutes = 10
+# radar_forecast_frames = 6
+# radar_frame_ms = 500
+# radar_refresh_secs = 600
+# radar_scale = 1.0
+# keep_radar_decoded = false
+# visual_effects = true
+# max_events = 2
+# hourly_cells = 8
+
+[profiles.low]
+# radar_frames = 1
+# radar_step_minutes = 10
+# radar_forecast_frames = 0
+# radar_frame_ms = 0
+# radar_refresh_secs = 900
+# radar_scale = 1.0
+# keep_radar_decoded = false
+# visual_effects = false
+# max_events = 2
+# hourly_cells = 6
+
+# ── 室内センサー（I2C） ──
+# この下の [sensors] があるときだけ動きます。使うときは、ここから下のブロックの「# 」を外します
+# （install-raspberry-pi.sh で「使う」と答えると自動で追加されます）。
+# 値は本機の基板（SHT35 0x44 / SCD41 0x62 / BMP581 0x47）に合わせています。
+# 配線とアドレスの確認: sudo i2cdetect -y 1 、読み取りの確認: home-display --read-sensors
+# 詳しくは /usr/share/doc/home-display/sensors.md
+#
 # [sensors]
-# bus = "/dev/i2c-1"          # GPIO2 (SDA) / GPIO3 (SCL)
-# interval_seconds = 1        # 1-60; SCD41 produces a new value every 5 s
-# stale_seconds = 60          # older values are dimmed
+# I2C バス（Raspberry Pi の GPIO2 = SDA / GPIO3 = SCL）
+# bus = "/dev/i2c-1"
+# 読み取り間隔（秒、1〜60）。SCD41 は 5 秒ごとにしか新しい値を出しません。
+# interval_seconds = 1
+# この秒数を過ぎた値は薄く表示（読み取り間隔の 3 倍未満なら 3 倍に広げます）
+# stale_seconds = 60
+# CO2 の注意色・警告色のしきい値（ppm）
 # co2_caution_ppm = 1000
 # co2_warning_ppm = 1500
 #
+# センサーごとに 1 つ。id は任意の名前（英数字と - _）、model は sht35 | scd41 | bmp581、
+# address は I2C アドレス（sht35: 0x44 / 0x45、scd41: 0x62、bmp581: 0x46 / 0x47）。
 # [[sensors.device]]
-# id = "room"                 # any name (letters, digits, - _)
-# model = "sht35"             # sht35 | scd41 | bmp581
-# address = 0x44              # 0x44 / 0x45
+# id = "room"
+# model = "sht35"
+# address = 0x44
 #
+# pressure_from: その id のセンサーの気圧で CO2 を補正（scd41 のみ）。
+# auto_calibration: 自動校正（scd41 のみ。週 1 回は外気程度まで換気される部屋向け）。
+# 書かなければセンサー側の設定のまま。
 # [[sensors.device]]
 # id = "co2"
 # model = "scd41"
 # address = 0x62
-# pressure_from = "baro"      # optional: pressure compensation for CO2
-# auto_calibration = true     # optional: ASC (needs fresh air about weekly)
+# pressure_from = "baro"
+# auto_calibration = true
 #
 # [[sensors.device]]
 # id = "baro"
 # model = "bmp581"
-# address = 0x47              # 0x46 / 0x47
+# address = 0x47
 #
-# # Which device supplies each displayed value; omitted values are not shown.
+# どの値をどのセンサーから表示するか（id を指定）。書かなかった値は表示しません。
 # [sensors.display]
 # temperature = "room"
 # humidity = "room"

@@ -15,7 +15,7 @@ curl -fsSL https://github.com/ynug/home-display/releases/latest/download/install
 ```
 
 最新の Release から `.deb` を取得してインストールし、iCal URL・地点・室内センサーを質問に答えて設定したうえで、
-自動起動まで行います。
+自動起動まで行います。設定の変更は SSH から `sudo home-display config edit`（[設定](#設定)）。
 
 **更新**も同じコマンドです（設定は保持されます）。質問なしで、設定を変えずに最新版へ更新するには:
 
@@ -67,14 +67,14 @@ Electron / WebView / HTML / JavaScript は使っていません。
 | ![radar](docs/screenshots/radar.png) | ![radar forecast](docs/screenshots/radar-forecast.png) |
 | **Overview（サンプルデータ）** | **重要な地震があるとき（サンプルデータ）** |
 | ![overview](docs/screenshots/overview.png) | ![alert](docs/screenshots/overview-alert.png) |
-| **設定・診断（サンプルデータ）** | |
-| ![settings](docs/screenshots/settings.png) | |
+| **設定・診断（表示のみ・サンプルデータ）** | **config.toml に誤りがあるとき** |
+| ![settings](docs/screenshots/settings.png) | ![config error](docs/screenshots/config-error.png) |
 
 > - 雨雲レーダーの 2 枚は **実データ** です（2026-10-11 08:25 JST の観測と 40 分後の予測、九州南部、縮尺 8）。
 >   出典: 気象庁「高解像度降水ナウキャスト」を加工、地図: 地理院タイル（白地図）を加工。
 > - Overview / 設定画面は **fixture（サンプルデータ）** をソフトウェアレンダラーで描画したもので、
 >   画面上にも「サンプルデータ表示中」「デモ用の時刻を表示中」と表示されます。
-> - 設定画面の「画面の保存先」「キャッシュ」の欄は、開発機のフォルダの場所が写るため塗りつぶしています。
+> - 設定画面の「キャッシュ」の欄は、開発機のフォルダの場所が写るため塗りつぶしています。
 
 ## 主な機能
 
@@ -84,8 +84,10 @@ Electron / WebView / HTML / JavaScript は使っていません。
 - **Radar** — 気象庁の雨雲を画面の主役に。**過去 1 時間の実測 → 現在 → 1 時間先までの予測** をアニメーション。
   予測は紫のタイムラインと「予測」バッジで実測と区別。現在地マーカー、気象庁の雨量凡例（mm/h）、出典表示。
   読み込み中（進捗 %）・取得失敗・データなし・古いデータ・代替データ表示を区別
-- **設定・診断** — 表示プロファイル、自動切り替え、表示時間、地図の縮尺を**キーボードで**変更・保存。
-  現在の地点、データソースの状態・最終成功・次回取得・直近エラー、設定ファイルの場所、最近の警告ログ、Radar のメモリ使用量
+- **設定は config.toml の 1 ファイル** — 全項目をコメントで並べたテンプレートから選んで書き換え、
+  `sudo home-display config edit` で編集 → 自動チェック → 再起動。誤りがあれば画面にエラーの場所を表示
+- **設定・診断画面（表示のみ）** — 今の設定（プロファイル・表示時間・縮尺・地点）と設定の読み込み時刻、
+  データソースの状態・最終成功・次回取得・直近エラー、設定ファイルの場所、最近の警告ログ、Radar のメモリ使用量
 - **室内センサー（I2C）** — 温度・湿度・CO2・気圧を Raspberry Pi の I2C から直接読み、天気カードに表示
   （CO2 は 1000 / 1500 ppm で注意色・警告色）。[docs/sensors.md](docs/sensors.md)。サンプルデータでは見本の値を表示
 - **自動ローテーション** — Overview 20 秒 ↔ Radar **自動**（アニメーション 2 周分 ≒ 18.5 秒、静止画は 10 秒）。
@@ -139,34 +141,20 @@ mise run                          # タスク一覧から選択
 ```sh
 cargo run -- --now 2026-10-11T10:40 --fixture default   # 時刻を固定してデモ（時計は進みます）
 cargo run -- --profile low                               # プロファイルを一時的に指定
-cargo run -- --check-config                              # 設定の検証（実際に使われる値を表示）
+cargo run -- config check                                # 設定の検証
+cargo run -- config show                                 # 実際に使われる値（既定値も含む）を表示
 ```
 
 ### キー操作
 
+ふだんはキーボードをつけない前提で、**キーは 2 つだけ**です。設定は画面やキーでは変更できません（[設定](#設定)）。
+
 | キー | 動作 |
 |---|---|
-| `1` / `2` | Overview / Radar |
-| `S`（`F2`） | 設定・診断画面の開閉 |
-| `←` `→` | 画面を切り替え |
-| `Space` | 自動切り替えの一時停止 / 再開 |
-| `U`（`F5`） | 全データを再取得（同じデータは 15 秒以上空けて実行） |
-| `Esc` | Overview に戻る |
+| `S` | 設定・診断画面の開閉（表示のみ。120 秒で Overview に戻ります） |
 | `Ctrl+Q` | 終了（サービスとして動いている場合も再起動せず、tty1 にログイン画面を出す） |
 
-設定画面では次のキーが使えます（ボタンはなく、キーボードだけで操作します）。
-
-| キー | 動作 |
-|---|---|
-| `P` | プロファイル切替（Full / Balanced / Low） |
-| `A` | 自動切り替えの ON / OFF |
-| `[` `]` | Overview の表示時間 −/+ 5 秒 |
-| `-` `=` / `0` | Radar の表示時間 −/+ 5 秒 / 自動に戻す |
-| `,` `.` | 地図の縮尺 −/+（5〜11。変更すると雨雲を取り直し） |
-| `W` | 保存（再起動後も維持） |
-
-マウス・タッチ操作は無効です（キーボードだけで操作します）。設定画面は `S` / `Esc` で閉じ、120 秒操作がないと Overview に戻ります。
-入力機器がない端末では自動ローテーションのみで運用できます。
+画面の切り替えは自動ローテーションだけです。マウス・タッチ操作は無効です。
 
 ### ヘッドレスのスクリーンショット
 
@@ -183,28 +171,55 @@ cargo run --release -- --config packaging/config/config.toml --screen radar \
 
 ## 設定
 
-設定の優先順位は **コマンドライン > 設定画面で保存した値 > config.toml > 既定値** です。
-地点とカレンダーは config.toml（と iCal URL のファイル）だけで設定します。
-環境変数で読むのは **カレンダーの秘密 URL（`HOME_DISPLAY_ICAL_URL`）だけ** です。
+設定は **config.toml の 1 ファイルだけ**です（Raspberry Pi では `/etc/home-display/config.toml`）。
+アプリは config.toml を書き換えず、画面やキーボードでも変更できません。
+優先順位は **コマンドライン > config.toml > 既定値**。環境変数で読むのはカレンダーの秘密 URL（`HOME_DISPLAY_ICAL_URL`）だけです。
 
-### 設定画面で保存（おすすめ）
-
-`S` で設定画面を開き、プロファイル・自動切り替え・表示時間・地図の縮尺を変えて `W` で保存します。
-保存先は `<state dir>/ui-overrides.toml`（Linux の systemd 下では `/var/lib/home-display/`）で、
-再起動や `.deb` の更新でも消えません（`apt purge` 時のみ削除）。管理者が管理する config.toml は書き換えません。
-SSH から直接編集することもできます（使えるキー: `profile`（`"full"` / `"balanced"` / `"low"`）、`rotation_enabled`、
-`overview_seconds`、`radar_seconds`（`0` = 自動）、`radar_zoom`）。知らないキーや書式の誤りがあるとファイル全体が無視され、
-実行中のアプリは変更を検知しないので、編集後は再起動してください。
-
-### 設定ファイル
-
-探索順: `--config <path>` → `~/.config/home-display/config.toml` → `/etc/home-display/config.toml`。
-どれもなければ組み込みの既定値（**fixture モード**）で起動します。
-全項目と既定値はコメント付きの [`packaging/config/config.toml`](packaging/config/config.toml) を参照してください。
+### 変更のしかた（SSH から）
 
 ```sh
-cp packaging/config/config.toml ~/.config/home-display/config.toml   # mode = "live"
-home-display --check-config     # 検証（iCal URL は「configured (hidden)」とだけ表示）
+sudo home-display config edit
+```
+
+1. config.toml のコピーがエディタ（`vi`。`EDITOR` / `SUDO_EDITOR` で変更可）で開きます。
+2. 保存してエディタを閉じると**自動でチェック**します。
+   - 誤りがあれば、行番号・その行・選べる値を表示し（例: `profile = "fast"` に対して
+     `line 37 … expected one of full, balanced, low`）、もう一度編集するか聞きます。
+     やめた場合、config.toml は変わりません。
+   - 問題がなければ config.toml を置き換え、**自動で再起動**して反映します（雨雲の取り直しに 1 分ほどかかります）。
+3. 何も変えずに閉じた場合は、何もしません。
+
+```sh
+home-display config show     # 実際に使われている値（書いていない項目は既定値）を表示
+home-display config check    # チェックだけ（--check-config と同じ）
+```
+
+`vi` で直接編集した場合は `home-display config check` で確認してから `sudo systemctl restart home-display` してください。
+誤りがあるまま起動した場合は、画面に「設定ファイルにエラーがあります」と誤りの場所が表示されます（`Ctrl+Q` で終了）。
+
+### 設定ファイルの書き方
+
+[`packaging/config/config.toml`](packaging/config/config.toml) が全項目のテンプレートです。
+**すべての項目が説明・選べる値・既定値つきでコメントアウトして並んでいる**ので、変えたい行の先頭の `# ` を消して値を書き換えます。
+書いていない項目は既定値になります（テンプレートと既定値が一致していることはテストで確認しています）。
+
+```toml
+[display]
+# 表示プロファイル。端末の性能に合わせて雨雲のコマ数や装飾を変えます。
+#   "full" / "balanced" / "low"
+profile = "low"          # ← 「# 」を消して書き換えた行
+```
+
+- `/etc/home-display/config.toml` は更新で上書きされません。新しい項目は、常に最新のテンプレート
+  `/usr/share/doc/home-display/config.example.toml` で確認できます。
+- 探索順: `--config <path>` → `~/.config/home-display/config.toml` → `/etc/home-display/config.toml`。
+  どれもなければ組み込みの既定値（**fixture モード**）で起動します。
+- v0.0.5 以前に設定画面で保存した値（`/var/lib/home-display/ui-overrides.toml`）は使われなくなりました。
+  インストールスクリプトを再実行すると config.toml に移します。
+
+```sh
+cp packaging/config/config.toml ~/.config/home-display/config.toml   # 開発機で試す場合（mode = "live"）
+home-display config check
 ```
 
 ### 秘密情報（iCal URL）
@@ -221,28 +236,21 @@ URL はログ・エラーメッセージ・診断画面に出力されません�
 
 ### 地点
 
-config.toml の `[location]` に地点名と緯度・経度を書き、再起動します（検索機能はありません）。
+config.toml の `[location]` に地点名と緯度・経度を書きます（検索機能はありません）。
 Google マップで地点を右クリックすると、先頭に「35.6812, 139.7671」の形式で座標が表示され、クリックでコピーできます。
 
-```sh
-sudo nano /etc/home-display/config.toml
-#   [location]
-#   name = "札幌"
-#   latitude = 43.0621
-#   longitude = 141.3544
-#   timezone = "Asia/Tokyo"
-sudo systemctl restart home-display
+```toml
+[location]
+name = "札幌"
+latitude = 43.0621
+longitude = 141.3544
+timezone = "Asia/Tokyo"
 ```
 
 - 天気はこの地点で取得し、雨雲レーダーもこの地点を中心に表示します。
 - 雨雲だけ別の場所を中心にするときは、`[radar]` に `latitude` / `longitude`（と表示名 `center_name`）を書きます。
-- Raspberry Pi ではインストールスクリプト（`install-raspberry-pi.sh`）を再実行して質問に答えても設定できます（config.toml を書き換えます）。
-- 現在の地点は設定画面の「設定ファイル」カードで確認できます。
-
-以前の版で設定画面から保存した地点（`ui-overrides.toml` の `location_name` / `location` / `radar_center` /
-`radar_center_name`）は**使われなくなりました**（起動時にログに警告が出ます）。
-インストールスクリプトを再実行すると config.toml に移します。手で移す場合は上の `[location]` に書いてください。
-
+- Raspberry Pi ではインストールスクリプトを再実行して質問に答えても設定できます（config.toml を書き換えます）。
+- 現在の地点は設定・診断画面（`S`）の「設定ファイル」カードで確認できます。
 
 ### 環境変数
 
@@ -312,7 +320,7 @@ GitHub Actions がビルドした `.deb`（amd64 / arm64）を使います。ど
 sudo apt update
 sudo apt install ./home-display_*_arm64.deb
 sudo nano /etc/home-display/home-display.env     # HOME_DISPLAY_ICAL_URL を記入（0600）
-sudo nano /etc/home-display/config.toml          # 地点・プロファイルなど（プロファイル等は設定画面でも可）
+sudo home-display config edit                    # 地点・プロファイルなど（保存時にチェックして再起動）
 sudo systemctl start home-display
 journalctl -u home-display -f
 ```
@@ -389,7 +397,7 @@ mise run check    # = cargo fmt --check → cargo clippy --all-targets -D warnin
 | 項目 | 状況 |
 |---|---|
 | macOS: ビルド・起動（winit + femtovg ウィンドウ）・自動ローテーション・秒表示 | ✅ 確認済み |
-| macOS: fmt / clippy（`-D warnings`）/ 92 テスト | ✅ 成功 |
+| macOS: fmt / clippy（`-D warnings`）/ 115 テスト | ✅ 成功 |
 | 全 fixture シナリオの 1920×1080 描画（ソフトウェアレンダラー） | ✅ 目視確認済み |
 | ライブ取得: 気象庁ナウキャスト（実測・予測）+ 地理院タイル / 気象庁XML（地震）/ Open-Meteo / 内閣府 CSV | ✅ macOS から実データで確認 |
 | 代替経路: 気象庁 URL を故意に 404 にして RainViewer / P2P地震情報へ自動切替 | ✅ 実データで確認 |
@@ -403,6 +411,8 @@ mise run check    # = cargo fmt --check → cargo clippy --all-targets -D warnin
 | libinput（キー入力）・CPU 描画（`linuxkms-software`）・720p など他の解像度 | ⏳ **未検証**（[手順](docs/linux-kms.md)） |
 | Raspberry Pi での性能・長時間稼働 | ⏳ **未検証** |
 | Raspberry Pi 用インストールスクリプト（`install-raspberry-pi.sh`） | ⏳ **未検証**（構文チェックのみ。実機・Release からのダウンロードは未実行） |
+| 設定: `config edit` / `show` / `check`、テンプレートの全項目・既定値の照合（テスト）、設定エラー画面 | ✅ macOS で確認 |
+| 設定: Raspberry Pi での `config edit` → 再起動、インストーラーでの旧 `ui-overrides.toml` の移行 | ⏳ **未検証**（移行は手元で模擬実行のみ） |
 | 室内センサー: ドライバー（偽の I2C での単体テスト）・サンプル値の表示（Overview / Radar / 設定画面） | ✅ 確認済み（macOS） |
 | 室内センサー: Raspberry Pi 実機・センサー基板での読み取り、`install-raspberry-pi.sh` の I2C 有効化・権限 | ⏳ **未検証**（基板は製造中） |
 | 日付が変わった直後の予定の取り直し | ⚠️ 待ち時間の計算は単体テストで確認。実際に 0 時をまたぐ動作は未確認 |

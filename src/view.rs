@@ -231,7 +231,6 @@ pub struct SettingsView {
     pub profile: Profile,
     pub profile_detail: String,
     pub rotation_enabled: bool,
-    pub rotation_paused: bool,
     pub overview_seconds: u32,
     /// 0 = automatic.
     pub radar_seconds: u32,
@@ -244,11 +243,11 @@ pub struct SettingsView {
     /// Current location (read-only; set in config.toml).
     pub location_text: String,
     pub config_path: String,
-    pub overrides_path: String,
+    /// When the config file was read, e.g. "10:40" / "10/19 08:15".
+    pub loaded_at: String,
     pub cache_dir: String,
     pub version: String,
     pub radar_memory: String,
-    pub save_message: String,
     /// Calendar (iCal) status line.
     pub ical_text: String,
     pub sources: Vec<DiagRowView>,
@@ -368,7 +367,7 @@ pub fn hm(t: DateTime<Tz>) -> String {
 }
 
 /// "06:40" today, otherwise "10/18 06:40".
-fn day_hm(t: DateTime<Utc>, tz: Tz, now: DateTime<Tz>) -> String {
+pub fn day_hm(t: DateTime<Utc>, tz: Tz, now: DateTime<Tz>) -> String {
     let local = t.with_timezone(&tz);
     if local.date_naive() == now.date_naive() {
         hm(local)

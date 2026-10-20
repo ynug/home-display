@@ -201,7 +201,6 @@ export struct SettingsView {
     profile-name: string,
     profile-detail: string,
     rotation-enabled: bool,
-    rotation-paused: bool,
     overview-seconds: int,
     // 0 = automatic (radar-auto-seconds is the current automatic value)
     radar-seconds: int,
@@ -211,11 +210,10 @@ export struct SettingsView {
     mode-text: string,
     location-text: string,
     config-path: string,
-    overrides-path: string,
+    loaded-at: string,
     cache-dir: string,
     version: string,
     radar-memory: string,
-    save-message: string,
     // calendar (iCal) status, e.g. "設定済み（URL は非表示）"
     ical-text: string,
     sources: [DiagRow],

@@ -1,4 +1,5 @@
-//! Application configuration: TOML file + settings-screen overrides.
+//! Application configuration: one TOML file, edited by hand
+//! (`sudo home-display config edit`), never written by the app.
 //!
 //! Resolution order for the config file:
 //! `--config <path>` → `$XDG_CONFIG_HOME/home-display/config.toml`
@@ -6,9 +7,10 @@
 //! Without any file the built-in defaults run in fixture mode, so `cargo run`
 //! shows a complete sample screen with no credentials.
 //!
-//! Precedence: command line > settings screen (saved `ui-overrides.toml`) >
-//! config file > built-in defaults. The only environment variable the app
-//! reads is the secret calendar URL (`HOME_DISPLAY_ICAL_URL`).
+//! Precedence: command line > config file > built-in defaults. The only
+//! environment variable the app reads is the secret calendar URL
+//! (`HOME_DISPLAY_ICAL_URL`). Every key is listed, with its default, in the
+//! commented template `packaging/config/config.toml` (checked by a test).
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -717,43 +719,6 @@ impl SensorsConfig {
     }
 }
 
-/// Values the settings screen may change at runtime. Persisted separately
-/// (in the writable state directory) so the admin-owned config is never rewritten.
-#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
-#[serde(default, deny_unknown_fields)]
-pub struct UiOverrides {
-    pub profile: Option<Profile>,
-    pub rotation_enabled: Option<bool>,
-    pub overview_seconds: Option<u32>,
-    pub radar_seconds: Option<u32>,
-    /// Radar base-map zoom (5–11).
-    pub radar_zoom: Option<u8>,
-    /// Legacy location keys (older settings screens and the Pi installer wrote
-    /// them). Still read so old files parse, but ignored and dropped on the
-    /// next save: the location now comes from config.toml only.
-    #[serde(skip_serializing)]
-    pub location_name: Option<String>,
-    #[serde(skip_serializing)]
-    pub location: Option<String>,
-    #[serde(skip_serializing)]
-    pub radar_center: Option<String>,
-    #[serde(skip_serializing)]
-    pub radar_center_name: Option<String>,
-}
-
-impl UiOverrides {
-    /// The file still has location keys that are no longer applied.
-    pub fn has_legacy_location(&self) -> bool {
-        self.location_name.is_some()
-            || self.location.is_some()
-            || self.radar_center.is_some()
-            || self.radar_center_name.is_some()
-    }
-}
-
-/// Radar map zoom range offered on the settings screen.
-pub const RADAR_ZOOM_RANGE: std::ops::RangeInclusive<u8> = 5..=11;
-
 /// Approximate width in km of the radar map at `zoom` around `lat`.
 pub fn radar_view_width_km(lat: f64, zoom: u8) -> f64 {
     let metres_per_px = 156_543.033_92 * lat.to_radians().cos() / 2f64.powi(zoom as i32);
@@ -772,9 +737,10 @@ pub enum ConfigError {
 
 impl AppConfig {
     pub fn from_toml_str(s: &str, path: &Path) -> Result<Self, ConfigError> {
+        // Display (not just message()) keeps the line, column and source excerpt.
         let cfg: AppConfig = toml::from_str(s).map_err(|e| ConfigError::Parse {
             path: path.to_owned(),
-            message: e.message().to_owned(),
+            message: e.to_string().trim_end().to_owned(),
         })?;
         cfg.validate()?;
         Ok(cfg)
@@ -838,26 +804,6 @@ impl AppConfig {
             ConfigError::Invalid(format!("profiles.{}: {}", profile.name().to_lowercase(), e.message()))
         })?;
         Ok(merged)
-    }
-
-    pub fn apply_overrides(&mut self, o: &UiOverrides) {
-        if let Some(p) = o.profile {
-            self.display.profile = p;
-        }
-        if let Some(v) = o.rotation_enabled {
-            self.rotation.enabled = v;
-        }
-        if let Some(v) = o.overview_seconds {
-            self.rotation.overview_seconds = clamp_seconds(v);
-        }
-        if let Some(v) = o.radar_seconds {
-            self.rotation.radar_seconds = clamp_radar_seconds(v);
-        }
-        if let Some(z) = o.radar_zoom
-            && RADAR_ZOOM_RANGE.contains(&z)
-        {
-            self.radar.map_zoom = z;
-        }
     }
 
     /// Radar map centre: `[radar]` latitude/longitude, else `[location]`.
@@ -1051,7 +997,9 @@ pub struct Paths {
 }
 
 impl Paths {
-    pub fn overrides_file(&self) -> PathBuf {
+    /// Saved settings-screen values of v0.0.5 and older: no longer read
+    /// (the Pi installer moves them into config.toml).
+    pub fn legacy_overrides_file(&self) -> PathBuf {
         self.state_dir.join("ui-overrides.toml")
     }
 
@@ -1090,26 +1038,6 @@ impl Paths {
             state_dir,
         }
     }
-}
-
-pub fn load_overrides(path: &Path) -> UiOverrides {
-    match std::fs::read_to_string(path) {
-        Ok(s) => toml::from_str(&s).unwrap_or_else(|e| {
-            tracing::warn!("ignoring invalid {}: {}", path.display(), e.message());
-            UiOverrides::default()
-        }),
-        Err(_) => UiOverrides::default(),
-    }
-}
-
-pub fn save_overrides(path: &Path, o: &UiOverrides) -> std::io::Result<()> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    let body = toml::to_string_pretty(o).map_err(std::io::Error::other)?;
-    let tmp = path.with_extension("toml.tmp");
-    std::fs::write(&tmp, format!("# Written by the Home Display settings screen.\n{body}"))?;
-    std::fs::rename(tmp, path)
 }
 
 #[cfg(test)]
@@ -1162,45 +1090,145 @@ mod tests {
     }
 
     #[test]
-    fn overrides_apply_and_clamp() {
-        let mut c = AppConfig::default();
-        c.apply_overrides(&UiOverrides {
-            profile: Some(Profile::Low),
-            rotation_enabled: Some(false),
-            overview_seconds: Some(1),
-            radar_seconds: Some(9999),
-            ..Default::default()
-        });
-        assert_eq!(c.display.profile, Profile::Low);
-        assert!(!c.rotation.enabled);
-        assert_eq!(c.rotation.overview_seconds, 5);
-        assert_eq!(c.rotation.radar_seconds, 600);
+    fn rotation_seconds_are_clamped() {
+        let c = AppConfig::from_toml_str(
+            "[rotation]\noverview_seconds = 1\nradar_seconds = 9999\n",
+            Path::new("x.toml"),
+        )
+        .unwrap();
+        assert_eq!(c.rotation.overview(), Duration::from_secs(5));
+        assert_eq!(c.rotation.radar(), Some(Duration::from_secs(600)));
         assert_eq!(clamp_radar_seconds(0), 0);
         assert_eq!(clamp_radar_seconds(3), 5);
     }
 
-    #[test]
-    fn legacy_location_overrides_are_ignored() {
-        let path = std::env::temp_dir().join(format!("hd-legacy-{}.toml", std::process::id()));
-        std::fs::write(
-            &path,
-            "location_name = \"大阪\"\nlocation = \"34.6937, 135.5023\"\nradar_center = \"\"\nradar_zoom = 8\n",
-        )
-        .unwrap();
-        let o = load_overrides(&path);
-        let _ = std::fs::remove_file(&path);
-        assert!(o.has_legacy_location(), "old files still parse");
+    // ───── the commented config.toml template ─────
 
+    const TEMPLATE: &str = include_str!("../packaging/config/config.toml");
+
+    /// "# key = value" / "# [table]" lines are settings; other comments are prose.
+    fn setting_line(line: &str) -> Option<&str> {
+        let rest = line.strip_prefix("# ")?;
+        let is_key = rest.split_once(" = ").is_some_and(|(k, _)| {
+            !k.is_empty()
+                && k.chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+        });
+        (is_key || rest.starts_with('[')).then_some(rest)
+    }
+
+    /// The template with every setting uncommented.
+    fn template_uncommented() -> String {
+        TEMPLATE
+            .lines()
+            .map(|l| setting_line(l).unwrap_or(l))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// "a.b.c" for every leaf; arrays of tables use "a[]".
+    fn key_paths(prefix: &str, t: &toml::Table, out: &mut std::collections::BTreeSet<String>) {
+        for (k, v) in t {
+            let path = if prefix.is_empty() {
+                k.clone()
+            } else {
+                format!("{prefix}.{k}")
+            };
+            match v {
+                toml::Value::Table(sub) => key_paths(&path, sub, out),
+                toml::Value::Array(items) if items.iter().all(|i| i.is_table()) && !items.is_empty() => {
+                    for i in items {
+                        key_paths(&format!("{path}[]"), i.as_table().unwrap(), out);
+                    }
+                }
+                _ => {
+                    out.insert(path);
+                }
+            }
+        }
+    }
+
+    /// Every optional field filled in, so that serialising lists every key.
+    fn fully_populated() -> AppConfig {
         let mut c = AppConfig::default();
-        let before = (c.location.name.clone(), c.location.latitude, c.location.longitude);
-        c.apply_overrides(&o);
-        assert_eq!(
-            (c.location.name.clone(), c.location.latitude, c.location.longitude),
-            before
+        c.display.scale_factor = Some(1.0);
+        c.calendar.ical_url = Some("https://example.invalid/basic.ics".into());
+        c.calendar.ical_url_file = Some("/etc/home-display/ical-url".into());
+        c.radar.latitude = Some(34.6937);
+        c.radar.longitude = Some(135.5023);
+        c.radar.center_name = Some("大阪".into());
+        c.radar.refresh_seconds = Some(600);
+        let table = |p| toml::Table::try_from(ProfileSettings::defaults(p)).unwrap();
+        c.profiles.full = Some(table(Profile::Full));
+        c.profiles.balanced = Some(table(Profile::Balanced));
+        c.profiles.low = Some(table(Profile::Low));
+        let mut sensors = SensorsConfig::standard();
+        sensors.device[1].auto_calibration = Some(true);
+        c.sensors = Some(sensors);
+        c
+    }
+
+    #[test]
+    fn template_lists_every_setting() {
+        let text = template_uncommented();
+        // Valid as a whole (unknown keys would be rejected by deny_unknown_fields).
+        AppConfig::from_toml_str(&text, Path::new("config.toml")).unwrap();
+        let mut in_template = std::collections::BTreeSet::new();
+        key_paths("", &text.parse::<toml::Table>().unwrap(), &mut in_template);
+        let mut all = std::collections::BTreeSet::new();
+        key_paths("", &toml::Table::try_from(fully_populated()).unwrap(), &mut all);
+        let missing: Vec<_> = all.difference(&in_template).collect();
+        assert!(
+            missing.is_empty(),
+            "add these to packaging/config/config.toml: {missing:?}"
         );
-        assert_eq!(c.radar.map_zoom, 8, "other keys still apply");
-        let saved = toml::to_string(&o).unwrap();
-        assert!(!saved.contains("location"), "dropped on the next save: {saved}");
+        // The shipped file itself (only mode and [location] active) is valid too.
+        AppConfig::from_toml_str(TEMPLATE, Path::new("config.toml")).unwrap();
+    }
+
+    #[test]
+    fn template_shows_the_defaults() {
+        let mut defaults = toml::Table::try_from(AppConfig::default()).unwrap();
+        let profiles = defaults.get_mut("profiles").unwrap().as_table_mut().unwrap();
+        for p in Profile::ALL {
+            let t = toml::Table::try_from(ProfileSettings::defaults(p)).unwrap();
+            profiles.insert(p.name().to_lowercase(), toml::Value::Table(t));
+        }
+        let mut table: Vec<String> = Vec::new();
+        let mut checked = 0;
+        for line in TEMPLATE.lines() {
+            // Table headers count whether active ("[display]") or commented.
+            let Some(rest) = setting_line(line).or_else(|| line.starts_with('[').then_some(line)) else {
+                continue;
+            };
+            if let Some(name) = rest.strip_prefix('[') {
+                table = name
+                    .trim_matches(|c| c == '[' || c == ']')
+                    .split('.')
+                    .map(String::from)
+                    .collect();
+                continue;
+            }
+            // Examples for optional values and the sensor board are not defaults.
+            if table.first().is_some_and(|t| t == "sensors") {
+                continue;
+            }
+            let (key, value) = rest.split_once(" = ").unwrap();
+            let mut node = &defaults;
+            for t in &table {
+                node = node[t.as_str()].as_table().unwrap();
+            }
+            let Some(default) = node.get(key) else { continue };
+            let shown: toml::Table = format!("v = {value}").parse().unwrap();
+            assert_eq!(
+                &shown["v"],
+                default,
+                "[{}] {key}: template shows {value}",
+                table.join(".")
+            );
+            checked += 1;
+        }
+        assert!(checked > 60, "only {checked} defaults compared");
     }
 
     #[test]
@@ -1226,26 +1254,6 @@ mod tests {
         c.normalize();
         assert_eq!(c.calendar.stale_minutes, 360, "3 × 2 h");
         assert_eq!(c.weather.stale_minutes, 90, "already ≥ 3 intervals");
-    }
-
-    #[test]
-    fn overrides_round_trip_through_disk() {
-        let dir = std::env::temp_dir().join(format!("hd-overrides-{}", std::process::id()));
-        let path = dir.join("ui-overrides.toml");
-        let o = UiOverrides {
-            profile: Some(Profile::Full),
-            rotation_enabled: Some(false),
-            overview_seconds: Some(30),
-            radar_seconds: None,
-            radar_zoom: Some(8),
-            ..Default::default()
-        };
-        save_overrides(&path, &o).unwrap();
-        assert_eq!(load_overrides(&path), o);
-        // A corrupt file is ignored rather than preventing startup.
-        std::fs::write(&path, "profile = 42").unwrap();
-        assert_eq!(load_overrides(&path), UiOverrides::default());
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -1284,18 +1292,9 @@ mod tests {
     }
 
     #[test]
-    fn radar_zoom_override_and_width() {
-        let mut c = AppConfig::default();
-        c.apply_overrides(&UiOverrides {
-            radar_zoom: Some(7),
-            ..Default::default()
-        });
-        assert_eq!(c.radar.map_zoom, 7);
-        c.apply_overrides(&UiOverrides {
-            radar_zoom: Some(20),
-            ..Default::default()
-        });
-        assert_eq!(c.radar.map_zoom, 7, "out-of-range override ignored");
+    fn radar_zoom_range_and_width() {
+        assert!(AppConfig::from_toml_str("[radar]\nmap_zoom = 7\n", Path::new("x.toml")).is_ok());
+        assert!(AppConfig::from_toml_str("[radar]\nmap_zoom = 20\n", Path::new("x.toml")).is_err());
         // Tokyo at z9 ≈ 340 km wide; each zoom step halves it.
         let w9 = radar_view_width_km(35.68, 9);
         assert!((330.0..350.0).contains(&w9), "{w9}");

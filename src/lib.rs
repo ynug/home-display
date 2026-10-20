@@ -7,6 +7,7 @@
 pub mod app;
 pub mod clock;
 pub mod config;
+pub mod config_cmd;
 pub mod diag;
 pub mod fixtures;
 pub mod model;

@@ -1,6 +1,6 @@
 [package]
 name = "home-display"
-version = "0.0.5"
+version = "0.0.6"
 edition = "2024"
 rust-version = "1.98"
 description = "Always-on home information display (clock, calendar, weather, earthquakes, rain radar) built with Rust and Slint"
@@ -89,6 +89,8 @@ conf-files = ["/etc/home-display/config.toml"]
 assets = [
     ["target/release/home-display", "usr/bin/", "755"],
     ["packaging/config/config.toml", "etc/home-display/config.toml", "644"],
+    # Always-current template (the /etc copy is a conffile and is not replaced on upgrade).
+    ["packaging/config/config.toml", "usr/share/doc/home-display/config.example.toml", "644"],
     ["packaging/config/home-display.env", "usr/share/home-display/home-display.env.example", "644"],
     ["README.md", "usr/share/doc/home-display/README.md", "644"],
     ["docs/linux-kms.md", "usr/share/doc/home-display/linux-kms.md", "644"],
