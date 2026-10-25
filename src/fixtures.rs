@@ -1,12 +1,12 @@
 //! Fixture scenarios for development and tests.
 //!
 //! Fixture files under `fixtures/` are real-format payloads (ICS, Open-Meteo
-//! JSON, P2PQuake JSON) with date placeholders, and are run through the same
-//! parsers as live data. All of them are sample data; the UI labels them as such.
+//! JSON) with date placeholders, and are run through the same parsers as live
+//! data. Sample earthquakes are built here directly. All of them are sample
+//! data; the UI labels them as such.
 //!
 //! Placeholders: `{{D+n}}` → `YYYYMMDD`, `{{DATE+n}}` → `YYYY-MM-DD`
-//! (n may be negative), `{{NOW15}}` → now floored to 15 min (`YYYY-MM-DDTHH:MM`),
-//! `{{AGO:m}}` → JST `YYYY/MM/DD HH:MM:SS`, m minutes ago.
+//! (n may be negative), `{{NOW15}}` → now floored to 15 min (`YYYY-MM-DDTHH:MM`).
 
 use std::sync::Arc;
 
@@ -14,11 +14,11 @@ use chrono::{DateTime, Days, Duration, Timelike, Utc};
 use chrono_tz::Tz;
 
 use crate::config::SensorModel;
-use crate::model::{CalendarData, EarthquakeData, Holidays, WeatherData};
+use crate::model::{CalendarData, Earthquake, EarthquakeData, Holidays, Shindo, Tsunami, WeatherData};
 use crate::repository::{Payload, Repository};
 use crate::sensors::Values;
 use crate::services::radar::FixtureRadar;
-use crate::services::{calendar, earthquake, holiday, weather};
+use crate::services::{calendar, holiday, jma_quake, weather};
 use crate::status::{ErrorKind, SourceError, SourceId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -89,14 +89,49 @@ const CAL_LONG: &str = include_str!("../fixtures/calendar/long.ics");
 const WX_SUNNY: &str = include_str!("../fixtures/weather/sunny.json");
 const WX_CLOUDY: &str = include_str!("../fixtures/weather/cloudy.json");
 const WX_RAIN: &str = include_str!("../fixtures/weather/rain.json");
-const EQ_RECENT: &str = include_str!("../fixtures/earthquake/recent.json");
-const EQ_STRONG: &str = include_str!("../fixtures/earthquake/strong.json");
-const EQ_OLD: &str = include_str!("../fixtures/earthquake/old.json");
-const EQ_NONE: &str = include_str!("../fixtures/earthquake/none.json");
+
+/// Sample earthquakes (not real): id, minutes ago, hypocentre, magnitude,
+/// depth (km), max intensity, tsunami.
+type QuakeRow = (&'static str, i64, &'static str, f32, i32, Shindo, Tsunami);
+
+const EQ_RECENT: &[QuakeRow] = &[
+    ("fixture-a", 35, "千葉県北西部", 4.2, 60, Shindo::S3, Tsunami::None),
+    ("fixture-b", 312, "茨城県南部", 2.9, 50, Shindo::S1, Tsunami::None),
+    ("fixture-c", 1500, "福島県沖", 4.0, 40, Shindo::S2, Tsunami::None),
+];
+const EQ_STRONG: &[QuakeRow] = &[
+    ("fixture-s", 12, "宮城県沖", 6.4, 50, Shindo::S5Upper, Tsunami::Watch),
+    ("fixture-t", 95, "宮城県沖", 4.6, 50, Shindo::S3, Tsunami::None),
+    ("fixture-u", 600, "岩手県沿岸南部", 3.8, 70, Shindo::S2, Tsunami::None),
+];
+const EQ_OLD: &[QuakeRow] = &[("fixture-o", 3100, "長野県南部", 3.1, 10, Shindo::S2, Tsunami::None)];
+const EQ_NONE: &[QuakeRow] = &[];
+
+fn quakes(rows: &[QuakeRow], now: DateTime<Tz>) -> EarthquakeData {
+    let now = now.with_nanosecond(0).unwrap_or(now);
+    let ago = |m: i64| now - Duration::minutes(m);
+    let quakes = rows
+        .iter()
+        .map(|&(id, m, name, magnitude, depth, shindo, tsunami)| Earthquake {
+            id: id.into(),
+            occurred_at: ago(m),
+            issued_at: ago(m - 3),
+            hypocenter: Some(name.into()),
+            magnitude: Some(magnitude),
+            depth_km: Some(depth),
+            max_shindo: Some(shindo),
+            tsunami,
+            foreign: false,
+        })
+        .collect();
+    EarthquakeData {
+        quakes,
+        source: jma_quake::SOURCE_LABEL.into(),
+    }
+}
 
 /// Expand date placeholders relative to `now`.
 pub fn render(template: &str, now: DateTime<Tz>) -> String {
-    let jst = now.with_timezone(&chrono_tz::Asia::Tokyo);
     let mut out = String::with_capacity(template.len());
     let mut rest = template;
     while let Some(start) = rest.find("{{") {
@@ -106,7 +141,7 @@ pub fn render(template: &str, now: DateTime<Tz>) -> String {
             return out;
         };
         let token = &rest[start + 2..start + end];
-        out.push_str(&expand(token, now, jst).unwrap_or_else(|| format!("{{{{{token}}}}}")));
+        out.push_str(&expand(token, now).unwrap_or_else(|| format!("{{{{{token}}}}}")));
         rest = &rest[start + end + 2..];
     }
     out.push_str(rest);
@@ -122,7 +157,7 @@ fn shift_days(now: DateTime<Tz>, n: i64) -> chrono::NaiveDate {
     }
 }
 
-fn expand(token: &str, now: DateTime<Tz>, jst: DateTime<Tz>) -> Option<String> {
+fn expand(token: &str, now: DateTime<Tz>) -> Option<String> {
     if let Some(n) = token.strip_prefix("DATE") {
         return Some(shift_days(now, n.parse().ok()?).format("%Y-%m-%d").to_string());
     }
@@ -132,10 +167,6 @@ fn expand(token: &str, now: DateTime<Tz>, jst: DateTime<Tz>) -> Option<String> {
     if token == "NOW15" {
         let floored = now.with_minute(now.minute() / 15 * 15)?;
         return Some(floored.format("%Y-%m-%dT%H:%M").to_string());
-    }
-    if let Some(m) = token.strip_prefix("AGO:") {
-        let t = jst - Duration::minutes(m.parse().ok()?);
-        return Some(t.format("%Y/%m/%d %H:%M:%S").to_string());
     }
     None
 }
@@ -208,7 +239,7 @@ impl FixtureSet {
             scenario,
             calendar: calendar::parse_ics(&render(cal, now), tz, ws, we),
             weather: weather::parse_open_meteo(render(wx, now).as_bytes()),
-            earthquake: earthquake::parse_p2pquake(render(eq, now).as_bytes(), tz),
+            earthquake: Ok(quakes(eq, now)),
             holidays: holiday::bundled(),
         };
         if scenario == Scenario::Holiday {
@@ -281,11 +312,8 @@ mod tests {
 
     #[test]
     fn render_placeholders() {
-        let s = render("{{D+0}} {{D-1}} {{DATE+2}} {{NOW15}} {{AGO:30}} {{BOGUS}}", now());
-        assert_eq!(
-            s,
-            "20261011 20261010 2026-10-13 2026-10-11T10:30 2026/10/11 10:10:00 {{BOGUS}}"
-        );
+        let s = render("{{D+0}} {{D-1}} {{DATE+2}} {{NOW15}} {{BOGUS}}", now());
+        assert_eq!(s, "20261011 20261010 2026-10-13 2026-10-11T10:30 {{BOGUS}}");
     }
 
     #[test]

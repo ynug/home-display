@@ -1,16 +1,12 @@
 //! Rain radar: precipitation tiles composited over GSI base-map tiles
 //! (地理院タイル), centred on the configured location.
 //!
-//! * 気象庁 高解像度降水ナウキャスト (default) — observations every 5 min for
+//! * 気象庁 高解像度降水ナウキャスト — observations every 5 min for
 //!   the past 3 h plus a 60-min forecast (250 m mesh up to 30 min ahead, 1 km
 //!   beyond). These are the tiles behind the JMA website's 雨雲の動き page;
-//!   they are not a documented API, so URLs may change without notice and the
-//!   RainViewer fallback is used if they fail. Reuse follows the JMA website
-//!   terms (出典表記・加工の明記).
+//!   they are not a documented API, so URLs may change without notice. Reuse
+//!   follows the JMA website terms (出典表記・加工の明記).
 //!   <https://www.jma.go.jp/jma/kishou/know/kurashi/highres_nowcast.html>
-//! * RainViewer Weather Maps API (fallback) — free for personal/educational
-//!   use, past ~2 h in 10-minute steps, max zoom 7, attribution required.
-//!   <https://www.rainviewer.com/api/weather-maps-api.html>
 //! * GSI tiles (白地図 by default) — real-time use needs attribution only; for
 //!   the pale/std maps zoom ≥ 9 avoids the extra GEBCO / JCG notices of zoom 5–8.
 //!   <https://maps.gsi.go.jp/development/ichiran.html>
@@ -32,14 +28,12 @@ use serde::Deserialize;
 
 use super::Context;
 use crate::clock;
-use crate::config::{ProfileSettings, RADAR_VIEW_H, RADAR_VIEW_W, RadarSource};
+use crate::config::{ProfileSettings, RADAR_VIEW_H, RADAR_VIEW_W};
 use crate::model::{RadarData, RadarFrame};
 use crate::repository::Payload;
 use crate::status::{ErrorKind, SourceError, SourceId};
 
 const BASE_TILE: u32 = 256;
-const RAINVIEWER_TILE: u32 = 512;
-const RAINVIEWER_MAX_ZOOM: u8 = 7;
 const JMA_TILE: u32 = 256;
 const JMA_MAX_ZOOM: u8 = 10;
 const JMA_MIN_ZOOM: u8 = 4;
@@ -55,7 +49,6 @@ pub fn jma_zooms(view_zoom: u8) -> (u8, u8) {
 }
 
 pub const JMA_CREDIT: &str = "雨雲: 気象庁「高解像度降水ナウキャスト」を加工";
-pub const RAINVIEWER_CREDIT: &str = "降水: RainViewer";
 
 /// Attribution line: precipitation credit + base-map credit.
 pub fn attribution(precip: &str, map_zoom: u8, basemap_url: &str) -> String {
@@ -402,9 +395,6 @@ pub struct Plan {
     pub frames: Vec<FrameSpec>,
     /// Index of the latest observation.
     pub now_index: usize,
-    pub source: &'static str,
-    pub credit: &'static str,
-    pub fallback: bool,
 }
 
 /// One entry of JMA `targetTimes_N1.json` (observations) / `_N2.json` (forecast).
@@ -492,65 +482,7 @@ pub fn plan_jma(
             frames.push(spec(t, v, true, z));
         }
     }
-    Ok(Plan {
-        frames,
-        now_index,
-        source: "気象庁",
-        credit: JMA_CREDIT,
-        fallback: false,
-    })
-}
-
-#[derive(Deserialize)]
-struct RainViewerIndex {
-    host: String,
-    radar: RainViewerRadar,
-}
-
-#[derive(Deserialize)]
-struct RainViewerRadar {
-    past: Vec<RainViewerFrame>,
-}
-
-#[derive(Deserialize, Clone)]
-struct RainViewerFrame {
-    time: i64,
-    path: String,
-}
-
-/// RainViewer has 10-minute frames and no forecast; cover the same time span.
-fn plan_rainviewer(index: &RainViewerIndex, profile: &ProfileSettings, view_zoom: u8, color: u8, smooth: bool) -> Plan {
-    let span = (profile.radar_frames.max(1) - 1) * profile.radar_step_minutes.max(5);
-    let n = (span / 10 + 1) as usize;
-    let z = RAINVIEWER_MAX_ZOOM.min(view_zoom.saturating_sub(1));
-    let host = &index.host;
-    let frames: Vec<FrameSpec> = index
-        .radar
-        .past
-        .iter()
-        .rev()
-        .take(n)
-        .rev()
-        .map(|f| FrameSpec {
-            key: format!("rv{}/{z}", f.path),
-            time: DateTime::from_timestamp(f.time, 0).unwrap_or_else(clock::now_utc),
-            forecast: false,
-            zoom: z,
-            tile: RAINVIEWER_TILE,
-            url: format!(
-                "{host}{}/{RAINVIEWER_TILE}/{z}/{{x}}/{{y}}/{color}/{}_0.png",
-                f.path,
-                u8::from(smooth)
-            ),
-        })
-        .collect();
-    Plan {
-        now_index: frames.len().saturating_sub(1),
-        frames,
-        source: "RainViewer",
-        credit: RAINVIEWER_CREDIT,
-        fallback: false,
-    }
+    Ok(Plan { frames, now_index })
 }
 
 async fn jma_plan(ctx: &Context, profile: &ProfileSettings, view_zoom: u8) -> Result<Plan, SourceError> {
@@ -581,19 +513,6 @@ async fn jma_plan(ctx: &Context, profile: &ProfileSettings, view_zoom: u8) -> Re
         Vec::new()
     };
     plan_jma(&past, &forecast, profile, view_zoom, base)
-}
-
-async fn rainviewer_plan(ctx: &Context, profile: &ProfileSettings, view_zoom: u8) -> Result<Plan, SourceError> {
-    let body = ctx.http.get_bytes(&ctx.cfg.radar.index_url, 256 * 1024).await?;
-    let index: RainViewerIndex =
-        serde_json::from_slice(&body).map_err(|e| SourceError::parse(format!("RainViewer index: {e}")))?;
-    Ok(plan_rainviewer(
-        &index,
-        profile,
-        view_zoom,
-        ctx.cfg.radar.color_scheme,
-        ctx.cfg.radar.smooth,
-    ))
 }
 
 // ───────────────────────────── live source ─────────────────────────────
@@ -782,19 +701,7 @@ pub async fn fetch(ctx: &Context, state: &tokio::sync::Mutex<LiveState>) -> Resu
     let (w, h) = profile.radar_size();
     let key = (view.zoom, view.left as i64, view.top as i64, w, h);
 
-    let plan = match ctx.cfg.radar.source {
-        RadarSource::Jma => match jma_plan(ctx, &profile, view.zoom).await {
-            Ok(p) => p,
-            Err(e) if ctx.cfg.radar.fallback => {
-                tracing::warn!("気象庁ナウキャストを取得できないため RainViewer で代替します: {e}");
-                let mut p = rainviewer_plan(ctx, &profile, view.zoom).await?;
-                p.fallback = true;
-                p
-            }
-            Err(e) => return Err(e),
-        },
-        RadarSource::Rainviewer => rainviewer_plan(ctx, &profile, view.zoom).await?,
-    };
+    let plan = jma_plan(ctx, &profile, view.zoom).await?;
 
     let mut st = state.lock().await;
     if st.key != Some(key) {
@@ -861,9 +768,7 @@ pub async fn fetch(ctx: &Context, state: &tokio::sync::Mutex<LiveState>) -> Resu
         now_index,
         width: w,
         height: h,
-        attribution: attribution(plan.credit, map_zoom, &ctx.cfg.radar.basemap_url),
-        source: plan.source.into(),
-        fallback: plan.fallback,
+        attribution: attribution(JMA_CREDIT, map_zoom, &ctx.cfg.radar.basemap_url),
         sample: false,
     })
 }
@@ -941,8 +846,6 @@ pub fn fixture_data(spec: FixtureRadar, profile: &ProfileSettings) -> Result<Rad
                 width: 0,
                 height: 0,
                 attribution: String::new(),
-                source: "サンプル".into(),
-                fallback: false,
                 sample: true,
             });
         }
@@ -976,8 +879,6 @@ pub fn fixture_data(spec: FixtureRadar, profile: &ProfileSettings) -> Result<Rad
         width: w,
         height: h,
         attribution: "サンプル画像 (合成)".into(),
-        source: "サンプル".into(),
-        fallback: false,
         sample: true,
     })
 }
@@ -1052,10 +953,6 @@ mod tests {
         assert!((90..=130).contains(&fine), "{fine}");
         // One zoom coarser (forecast > 30 min) needs about a quarter of the tiles.
         assert!(v.tiles(JMA_TILE, v.grid_scale(8, JMA_TILE)).len() <= 12);
-        // RainViewer z7 @ 512 px is half the base resolution.
-        assert!((v.grid_scale(7, RAINVIEWER_TILE) - 0.5).abs() < 1e-9);
-        let rv = v.tiles(RAINVIEWER_TILE, v.grid_scale(7, RAINVIEWER_TILE));
-        assert!((2..=9).contains(&rv.len()), "{}", rv.len());
     }
 
     #[test]
@@ -1160,7 +1057,7 @@ mod tests {
         assert_eq!(auto_dwell(13, 6, 500), Duration::from_millis(18_500));
         // Full: 25 frames × 300 ms → 9 s per loop.
         assert_eq!(animation_loop(25, 12, 300), Duration::from_millis(9_000));
-        // Observations only (RainViewer fallback): now is the last frame.
+        // Observations only (no forecast): now is the last frame.
         assert_eq!(animation_loop(7, 6, 500), Duration::from_millis(5_000));
         // Static image.
         assert_eq!(auto_dwell(1, 0, 0), crate::screen::DEFAULT_RADAR_DWELL);
@@ -1220,26 +1117,6 @@ mod tests {
         assert_eq!(plan.frames.len(), 6, "gap skipped, no forecast");
         assert_eq!(plan.now_index, 5);
         assert!(plan_jma(&[], &[], &p, 9, "u").is_err());
-    }
-
-    #[test]
-    fn rainviewer_plan_covers_same_span() {
-        let index = RainViewerIndex {
-            host: "https://h".into(),
-            radar: RainViewerRadar {
-                past: (0..13)
-                    .map(|k| RainViewerFrame {
-                        time: 1_800_000_000 + k * 600,
-                        path: format!("/p{k}"),
-                    })
-                    .collect(),
-            },
-        };
-        let p = ProfileSettings::defaults(crate::config::Profile::Balanced);
-        let plan = plan_rainviewer(&index, &p, 9, 2, true);
-        assert_eq!(plan.frames.len(), 7, "60 min at 10-min steps");
-        assert_eq!(plan.now_index, 6);
-        assert_eq!(plan.frames[6].url, "https://h/p12/512/7/{x}/{y}/2/1_0.png");
     }
 
     #[test]

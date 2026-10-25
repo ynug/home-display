@@ -75,7 +75,7 @@ pub struct ProfileSettings {
     /// Observed radar frames (including the latest) kept and animated.
     /// 1 = static latest image.
     pub radar_frames: u32,
-    /// Minutes between animation frames (JMA: multiple of 5; RainViewer: 10).
+    /// Minutes between animation frames (multiple of 5).
     pub radar_step_minutes: u32,
     /// Forecast frames after "now" (JMA nowcast, up to 60 min ahead). 0 = none.
     pub radar_forecast_frames: u32,
@@ -346,27 +346,14 @@ impl Default for WeatherConfig {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum QuakeSource {
-    Jma,
-    P2pquake,
-}
-
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct EarthquakeConfig {
     pub provider: Provider,
-    /// "jma" (気象庁 防災情報XML, official) or "p2pquake" (P2P地震情報 API).
-    pub source: QuakeSource,
-    /// Fall back to P2PQuake when the JMA feed cannot be fetched.
-    pub fallback: bool,
     /// JMA PULL Atom feeds: high-frequency (≥ last 10 min, updated every
     /// minute) and long-term (several days, updated hourly).
     pub jma_feed_url: String,
     pub jma_long_feed_url: String,
-    /// P2PQuake history endpoint.
-    pub base_url: String,
     pub refresh_seconds: u64,
     pub stale_minutes: u64,
     /// Quakes older than this are shown muted, never highlighted.
@@ -377,11 +364,8 @@ impl Default for EarthquakeConfig {
     fn default() -> Self {
         EarthquakeConfig {
             provider: Provider::Live,
-            source: QuakeSource::Jma,
-            fallback: true,
             jma_feed_url: "https://www.data.jma.go.jp/developer/xml/feed/eqvol.xml".into(),
             jma_long_feed_url: "https://www.data.jma.go.jp/developer/xml/feed/eqvol_l.xml".into(),
-            base_url: "https://api.p2pquake.net/v2/history".into(),
             refresh_seconds: 60,
             stale_minutes: 15,
             highlight_hours: 24,
@@ -389,34 +373,17 @@ impl Default for EarthquakeConfig {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum RadarSource {
-    Jma,
-    Rainviewer,
-}
-
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct RadarConfig {
     pub provider: Provider,
-    /// Precipitation source: "jma" (気象庁 高解像度降水ナウキャスト, with
-    /// 1-hour forecast) or "rainviewer" (past only, personal use).
-    pub source: RadarSource,
-    /// Fall back to RainViewer when the JMA data cannot be fetched.
-    pub fallback: bool,
     /// JMA nowcast tile root (targetTimes_N1/N2.json and tiles live below it).
     pub jma_base_url: String,
-    /// RainViewer Weather Maps index (fallback / `source = "rainviewer"`).
-    pub index_url: String,
     /// Base-map tile template (`{z}/{x}/{y}`). GSI blank map (白地図) by default:
     /// coastlines and boundaries only, which keeps precipitation readable.
     pub basemap_url: String,
     /// Base-map zoom (5–11 on the settings screen).
     pub map_zoom: u8,
-    /// RainViewer colour scheme id (2 = Universal Blue).
-    pub color_scheme: u8,
-    pub smooth: bool,
     pub stale_minutes: u64,
     /// Days before cached base-map tiles are re-downloaded.
     pub basemap_cache_days: u64,
@@ -433,14 +400,9 @@ impl Default for RadarConfig {
     fn default() -> Self {
         RadarConfig {
             provider: Provider::Live,
-            source: RadarSource::Jma,
-            fallback: true,
             jma_base_url: "https://www.jma.go.jp/bosai/jmatile/data/nowc".into(),
-            index_url: "https://api.rainviewer.com/public/weather-maps.json".into(),
             basemap_url: "https://cyberjapandata.gsi.go.jp/xyz/blank/{z}/{x}/{y}.png".into(),
             map_zoom: 9,
-            color_scheme: 2,
-            smooth: true,
             stale_minutes: 40,
             basemap_cache_days: 30,
             latitude: None,
@@ -735,13 +697,49 @@ pub enum ConfigError {
     Invalid(String),
 }
 
+/// Keys of the removed RainViewer / P2P地震情報 fallbacks. An older
+/// config.toml may still set them; they are ignored with a warning instead of
+/// stopping the display.
+const REMOVED_KEYS: [(&str, &[&str]); 2] = [
+    ("earthquake", &["source", "fallback", "base_url"]),
+    ("radar", &["source", "fallback", "index_url", "color_scheme", "smooth"]),
+];
+
+/// Removes [`REMOVED_KEYS`] from `t`; returns the dotted names removed.
+fn strip_removed_keys(t: &mut toml::Table) -> Vec<String> {
+    let mut removed = Vec::new();
+    for (table, keys) in REMOVED_KEYS {
+        let Some(toml::Value::Table(sub)) = t.get_mut(table) else {
+            continue;
+        };
+        for k in keys {
+            if sub.remove(*k).is_some() {
+                removed.push(format!("{table}.{k}"));
+            }
+        }
+    }
+    removed
+}
+
 impl AppConfig {
     pub fn from_toml_str(s: &str, path: &Path) -> Result<Self, ConfigError> {
         // Display (not just message()) keeps the line, column and source excerpt.
-        let cfg: AppConfig = toml::from_str(s).map_err(|e| ConfigError::Parse {
+        let parse_error = |e: toml::de::Error| ConfigError::Parse {
             path: path.to_owned(),
             message: e.to_string().trim_end().to_owned(),
-        })?;
+        };
+        let mut table: toml::Table = toml::from_str(s).map_err(parse_error)?;
+        let removed = strip_removed_keys(&mut table);
+        let cfg: AppConfig = if removed.is_empty() {
+            toml::from_str(s)
+        } else {
+            tracing::warn!(
+                "設定ファイルの次の項目は廃止されたため無視します: {}",
+                removed.join(", ")
+            );
+            table.try_into()
+        }
+        .map_err(parse_error)?;
         cfg.validate()?;
         Ok(cfg)
     }
@@ -1085,6 +1083,14 @@ mod tests {
     }
 
     #[test]
+    fn removed_fallback_keys_are_ignored() {
+        let s = "[earthquake]\nsource = \"p2pquake\"\nfallback = true\n[radar]\nsource = \"jma\"\nsmooth = true\nmap_zoom = 8\n";
+        let c = AppConfig::from_toml_str(s, Path::new("x.toml")).unwrap();
+        assert_eq!(c.radar.map_zoom, 8);
+        assert!(AppConfig::from_toml_str("[radar]\nsmooth = true\nmap_zom = 8\n", Path::new("x.toml")).is_err());
+    }
+
+    #[test]
     fn invalid_timezone_is_rejected() {
         assert!(AppConfig::from_toml_str("[location]\ntimezone = \"Mars/Base\"\n", Path::new("x.toml")).is_err());
     }
@@ -1228,7 +1234,7 @@ mod tests {
             );
             checked += 1;
         }
-        assert!(checked > 60, "only {checked} defaults compared");
+        assert!(checked > 50, "only {checked} defaults compared");
     }
 
     #[test]

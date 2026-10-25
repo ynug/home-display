@@ -260,11 +260,6 @@ export component RadarScreen inherits Rectangle {
                         }
                     }
                 }
-                if root.radar.source-note != "": HorizontalLayout {
-                    alignment: start;
-                    padding-top: 10px;
-                    StaleBadge { text: root.radar.source-note; }
-                }
             }
 
             // Bottom: timeline + attribution.
@@ -378,7 +373,7 @@ export component RadarScreen inherits Rectangle {
                     if root.indoor.items.length > 0: Divider { }
                     if root.indoor.items.length > 0: IndoorGrid { data: root.indoor; }
                     Rectangle { vertical-stretch: 1; }
-                    if root.radar.source-note == "": Legend { }
+                    Legend { }
                 }
             }
 

@@ -76,8 +76,8 @@ revision = ""
 extended-description = """\
 Always-on home information display rendered directly on DRM/KMS with Slint.
 Shows the clock, Japanese holidays, an iCal calendar (today and tomorrow),
-weather (Open-Meteo), earthquake information (JMA XML, P2PQuake fallback) and
-a rain radar (JMA nowcast with 1-hour forecast, RainViewer fallback)."""
+weather (Open-Meteo), earthquake information (JMA XML) and a rain radar
+(JMA nowcast with 1-hour forecast)."""
 # $auto resolves shared-library dependencies via dpkg-shlibdeps. EGL / GLES are
 # loaded at run time (dlopen), so shlibdeps cannot see them: list them here.
 # Without them the GPU renderer fails to start (seen on Raspberry Pi 4, v0.0.3).

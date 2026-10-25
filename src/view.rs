@@ -9,7 +9,7 @@ use crate::config::{AppConfig, Profile, ProfileSettings, Quantity, SensorsConfig
 use crate::model::{CalendarEvent, WeatherKind};
 use crate::repository::Snapshot;
 use crate::sensors;
-use crate::services::{calendar::local_midnight, earthquake, weather};
+use crate::services::{calendar::local_midnight, jma_quake, weather};
 use crate::status::{Health, Origin, SourceId, SourceStatus};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -204,8 +204,6 @@ pub struct RadarView {
     /// Sparse timeline labels ("" for frames without a label).
     pub tick_labels: Vec<String>,
     pub now_index: i32,
-    /// e.g. "気象庁" or "RainViewer（代替）".
-    pub source_note: String,
     /// 0.0..=1.0 while the first download is running, -1 otherwise.
     pub progress: f32,
     pub latest_label: String,
@@ -847,7 +845,7 @@ pub fn quake(cx: &ViewContext) -> QuakeView {
             .earthquake
             .as_ref()
             .map(|d| d.source.clone())
-            .unwrap_or_else(|| earthquake::SOURCE_LABEL.into())
+            .unwrap_or_else(|| jma_quake::SOURCE_LABEL.into())
     };
     let Some(data) = cx.snap.earthquake.as_ref() else {
         if st.is_some_and(|s| s.last_error.is_some()) {
@@ -1060,11 +1058,6 @@ pub fn radar(cx: &ViewContext) -> RadarView {
     let latest = now_t.with_timezone(&tz);
     v.latest_label = format!("{} 時点", hm(latest));
     v.age_text = ago(cx.now, latest);
-    v.source_note = if r.fallback {
-        format!("{}で代替表示中（気象庁から取得できません）", r.source)
-    } else {
-        String::new()
-    };
     v
 }
 
@@ -1393,7 +1386,6 @@ mod tests {
             .collect();
         assert_eq!(ticks, ["-60分", "-30分", "現在", "+30分", "+60分"]);
         assert_eq!(v.frame_offsets[8], "+20分");
-        assert!(v.source_note.is_empty());
     }
 
     #[test]

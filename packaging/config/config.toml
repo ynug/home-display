@@ -79,14 +79,9 @@ timezone = "Asia/Tokyo"
 [earthquake]
 # "live" | "fixture" | "disabled"
 # provider = "live"
-# 取得元。"jma" = 気象庁 防災情報XML（公式、1 日 約 30 MB）、"p2pquake" = P2P地震情報 API
-# source = "jma"
-# 気象庁から取れないとき P2P地震情報に自動で切り替える
-# fallback = true
-# 気象庁の Atom フィード（高頻度 / 長期）と、P2P地震情報の履歴 API
+# 取得元は気象庁 防災情報XML（公式、1 日 約 30 MB）。Atom フィード（高頻度 / 長期）
 # jma_feed_url = "https://www.data.jma.go.jp/developer/xml/feed/eqvol.xml"
 # jma_long_feed_url = "https://www.data.jma.go.jp/developer/xml/feed/eqvol_l.xml"
-# base_url = "https://api.p2pquake.net/v2/history"
 # 取得間隔（秒）
 # refresh_seconds = 60
 # stale_minutes = 15
@@ -96,11 +91,7 @@ timezone = "Asia/Tokyo"
 [radar]
 # "live" | "fixture" | "disabled"
 # provider = "live"
-# 取得元。"jma" = 気象庁 高解像度降水ナウキャスト（実測 + 1 時間先の予測）、
-# "rainviewer" = RainViewer（実測のみ、個人・教育目的）
-# source = "jma"
-# 気象庁から取れないとき RainViewer に自動で切り替える
-# fallback = true
+# 取得元は気象庁 高解像度降水ナウキャスト（実測 + 1 時間先の予測）
 # 地図の縮尺（3〜14）。小さいほど広い範囲。9 で東京付近の横幅 約 340 km、1 つ変えると範囲が 2 倍／半分。
 # map_zoom = 9
 # 雨雲の中心を地点と別にする場合（書かなければ [location] が中心）。center_name は画面の表示名。
@@ -114,11 +105,7 @@ timezone = "Asia/Tokyo"
 # basemap_cache_days = 30
 # 取得先（通常は変更不要）
 # jma_base_url = "https://www.jma.go.jp/bosai/jmatile/data/nowc"
-# index_url = "https://api.rainviewer.com/public/weather-maps.json"
 # basemap_url = "https://cyberjapandata.gsi.go.jp/xyz/blank/{z}/{x}/{y}.png"
-# RainViewer の配色（2 = Universal Blue）となめらか表示
-# color_scheme = 2
-# smooth = true
 
 [holiday]
 # "live" = 内閣府の祝日 CSV（初回取得までは同梱のデータ）
@@ -129,8 +116,8 @@ timezone = "Asia/Tokyo"
 # ── プロファイルごとの細かい値 ──
 # 使っているプロファイル（[display] profile）の値だけが使われます。各値は既定値です。
 #   radar_frames          : 実測のコマ数（最新を含む）。1 = 最新の 1 枚だけ
-#   radar_step_minutes    : コマの間隔（分）。5 か 10（RainViewer は常に 10）
-#   radar_forecast_frames : 予測のコマ数（気象庁のみ、0〜12）
+#   radar_step_minutes    : コマの間隔（分）。5 か 10
+#   radar_forecast_frames : 予測のコマ数（0〜12）
 #   radar_frame_ms        : 1 コマの表示時間（ミリ秒）。0 = アニメーションなし
 #   radar_refresh_secs    : 雨雲の取得間隔（秒）
 #   radar_scale           : 雨雲画像の解像度（1376×1012 に対する倍率、0.25〜1.5）

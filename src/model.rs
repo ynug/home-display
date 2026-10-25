@@ -141,22 +141,6 @@ pub enum Shindo {
 }
 
 impl Shindo {
-    /// P2PQuake `maxScale` value → intensity. -1 and unknown values → None.
-    pub fn from_p2p(v: i32) -> Option<Shindo> {
-        Some(match v {
-            10 => Shindo::S1,
-            20 => Shindo::S2,
-            30 => Shindo::S3,
-            40 => Shindo::S4,
-            45 | 46 => Shindo::S5Lower,
-            50 => Shindo::S5Upper,
-            55 => Shindo::S6Lower,
-            60 => Shindo::S6Upper,
-            70 => Shindo::S7,
-            _ => return None,
-        })
-    }
-
     pub fn label(self) -> &'static str {
         match self {
             Shindo::S1 => "1",
@@ -188,17 +172,6 @@ pub enum Tsunami {
 }
 
 impl Tsunami {
-    pub fn from_p2p(s: &str) -> Tsunami {
-        match s {
-            "None" => Tsunami::None,
-            "Checking" => Tsunami::Checking,
-            "NonEffective" => Tsunami::NonEffective,
-            "Watch" => Tsunami::Watch,
-            "Warning" => Tsunami::Warning,
-            _ => Tsunami::Unknown,
-        }
-    }
-
     pub fn label(self) -> &'static str {
         match self {
             Tsunami::None => "津波の心配なし",
@@ -283,10 +256,6 @@ pub struct RadarData {
     pub frames: Vec<RadarFrame>,
     /// Index of the latest observation ("now").
     pub now_index: usize,
-    /// Short provider name shown on screen ("気象庁", "RainViewer").
-    pub source: String,
-    /// The primary source failed and this is the fallback provider.
-    pub fallback: bool,
     pub width: u32,
     pub height: u32,
     pub attribution: String,
@@ -306,8 +275,6 @@ mod tests {
 
     #[test]
     fn shindo_mapping() {
-        assert_eq!(Shindo::from_p2p(45), Some(Shindo::S5Lower));
-        assert_eq!(Shindo::from_p2p(-1), None);
         assert_eq!(Shindo::S7.level(), 9);
         assert_eq!(Shindo::S1.level(), 1);
         assert_eq!(Shindo::S6Upper.label(), "6強");
@@ -324,8 +291,8 @@ mod tests {
 
     #[test]
     fn tsunami_alerts() {
-        assert!(Tsunami::from_p2p("Warning").is_alert());
-        assert!(!Tsunami::from_p2p("None").is_alert());
-        assert_eq!(Tsunami::from_p2p("garbage"), Tsunami::Unknown);
+        assert!(Tsunami::Warning.is_alert());
+        assert!(Tsunami::Checking.is_alert());
+        assert!(!Tsunami::None.is_alert());
     }
 }

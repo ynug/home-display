@@ -241,7 +241,6 @@ pub fn radar(v: &view::RadarView, decoding: bool) -> ui::RadarView {
         frame_offsets: model(v.frame_offsets.iter().map(|t| s(t)).collect()),
         tick_labels: model(v.tick_labels.iter().map(|t| s(t)).collect()),
         now_index: v.now_index,
-        source_note: s(&v.source_note),
         progress: v.progress,
         latest_label: s(&v.latest_label),
         age_text: s(&v.age_text),

@@ -3,7 +3,6 @@
 //! interval/backoff. Nothing here touches the UI thread.
 
 pub mod calendar;
-pub mod earthquake;
 pub mod holiday;
 pub mod jma_quake;
 pub mod radar;
@@ -274,24 +273,16 @@ pub fn spawn_all(rt: &tokio::runtime::Handle, ctx: Context) {
         "Open-Meteo",
         stale(cfg.weather.stale_minutes),
     );
-    let quake_label = match cfg.earthquake.source {
-        crate::config::QuakeSource::Jma => "気象庁 防災情報XML",
-        crate::config::QuakeSource::P2pquake => "P2P地震情報 (気象庁)",
-    };
-    let radar_label = match cfg.radar.source {
-        crate::config::RadarSource::Jma => "気象庁ナウキャスト + 地理院タイル",
-        crate::config::RadarSource::Rainviewer => "RainViewer + 地理院タイル",
-    };
     let quake_provider = setup(
         SourceId::Earthquake,
         cfg.earthquake.provider,
-        quake_label,
+        "気象庁 防災情報XML",
         stale(cfg.earthquake.stale_minutes),
     );
     let radar_provider = setup(
         SourceId::Radar,
         cfg.radar.provider,
-        radar_label,
+        "気象庁ナウキャスト + 地理院タイル",
         stale(cfg.radar.stale_minutes),
     );
     let holiday_provider = setup(
@@ -392,12 +383,12 @@ pub fn spawn_all(rt: &tokio::runtime::Handle, ctx: Context) {
             rt.spawn(run_periodic(
                 ctx.clone(),
                 SourceId::Earthquake,
-                // The JMA feed updates every minute (P2PQuake allows 60 req/min).
+                // The JMA feed updates every minute.
                 |c| Duration::from_secs(c.cfg.earthquake.refresh_seconds.max(30)),
                 move |c| {
                     let jma = jma.clone();
                     async move {
-                        earthquake::fetch(&c, &jma)
+                        jma_quake::fetch(&c, &jma)
                             .await
                             .map(|d| Payload::Earthquake(Arc::new(d)))
                     }
