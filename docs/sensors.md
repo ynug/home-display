@@ -36,6 +36,24 @@ Raspberry Pi の I2C に接続した温湿度・CO2・気圧センサーを、�
 この構成は `install-raspberry-pi.sh`（`--sensors`）が書き込む `[sensors]` と、サンプルデータ（fixture）の既定です
 （コード上は `SensorsConfig::standard()`）。温度・湿度は自己発熱の少ない SHT35 を表示し、CO2 は BMP581 の気圧で補正します。
 
+基板の回路・製造データ（JLCPCB 用）・注文方法は、別リポジトリ [env-sensor-board](https://github.com/ynug/env-sensor-board)
+にあります（M5Stack Tab5 用の [tab5-env-monitor](https://github.com/ynug/tab5-env-monitor) と共通の基板）。
+
+### 配線
+
+基板は **3.3V 専用**で、Qwiic コネクタが付いています。Raspberry Pi には変換基板などは使わず、
+Qwiic とジャンパーワイヤー（メス）の変換ケーブルで 40 ピンヘッダーに直接つなぎます。
+
+| 基板の Qwiic | 線の色（Qwiic 標準） | Raspberry Pi |
+|---|---|---|
+| 1 GND | 黒 | 6 番ピン（GND） |
+| 2 3.3V | 赤 | **1 番ピン（3.3V）** |
+| 3 SDA | 青 | 3 番ピン（GPIO2 / SDA） |
+| 4 SCL | 黄 | 5 番ピン（GPIO3 / SCL） |
+
+- 赤の線を 2 番・4 番ピン（5V）につながないこと。BMP581 などの定格を超えて壊れます。
+- SDA / SCL は基板側で 4.7kΩ にプルアップ済み。Raspberry Pi 側の 1.8kΩ と並列になりますが、そのまま使えます。
+
 ## 2. 設定
 
 ```toml

@@ -89,7 +89,8 @@ Electron / WebView / HTML / JavaScript は使っていません。
 - **設定・診断画面（表示のみ）** — 今の設定（プロファイル・表示時間・縮尺・地点）と設定の読み込み時刻、
   データソースの状態・最終成功・次回取得・直近エラー、設定ファイルの場所、最近の警告ログ、Radar のメモリ使用量
 - **室内センサー（I2C）** — 温度・湿度・CO2・気圧を Raspberry Pi の I2C から直接読み、天気カードに表示
-  （CO2 は 1000 / 1500 ppm で注意色・警告色）。[docs/sensors.md](docs/sensors.md)。サンプルデータでは見本の値を表示
+  （CO2 は 1000 / 1500 ppm で注意色・警告色）。[docs/sensors.md](docs/sensors.md)。サンプルデータでは見本の値を表示。
+  センサー基板の製造データ（JLCPCB 用）は [env-sensor-board](https://github.com/ynug/env-sensor-board)
 - **自動ローテーション** — Overview 20 秒 ↔ Radar **自動**（アニメーション 2 周分 ≒ 18.5 秒、静止画は 10 秒）。
   雨雲の初回取得が終わるまでは Radar に切り替えず、進捗（%・コマ数）を 1 秒ごとに表示
 - **表示プロファイル** — Full / Balanced / Low（端末の性能に合わせて雨雲のコマ数・装飾を調整）
@@ -412,6 +413,13 @@ mise run check    # = cargo fmt --check → cargo clippy --all-targets -D warnin
 | 室内センサー: ドライバー（偽の I2C での単体テスト）・サンプル値の表示（Overview / Radar / 設定画面） | ✅ 確認済み（macOS） |
 | 室内センサー: Raspberry Pi 実機・センサー基板での読み取り、`install-raspberry-pi.sh` の I2C 有効化・権限 | ⏳ **未検証**（基板は製造中） |
 | 日付が変わった直後の予定の取り直し | ⚠️ 待ち時間の計算は単体テストで確認。実際に 0 時をまたぐ動作は未確認 |
+
+## 関連リポジトリ
+
+| リポジトリ | 内容 |
+|---|---|
+| [env-sensor-board](https://github.com/ynug/env-sensor-board) | 室内センサーに使う基板（SCD41 / SHT35 / BMP581）の製造データ。JLCPCB で部品実装まで注文できます |
+| [tab5-env-monitor](https://github.com/ynug/tab5-env-monitor) | 同じセンサー基板を M5Stack Tab5 につないで、CO2・温度・湿度・気圧を表示する据え置き型モニター |
 
 ## ライセンス
 
