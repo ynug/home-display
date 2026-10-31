@@ -3,7 +3,7 @@
 > [!IMPORTANT]
 > **このプロジェクトは、AI（Claude Code）によるバイブコーディングで作成しています。**\
 > 作者が作りたいものの思想とアーキテクチャを伝え、コードは AI が書いています。\
-> Raspberry Pi などの Linux 実機での動作はまだ確認していません（[検証状況](#検証状況)）。\
+> Raspberry Pi 4 にセンサー基板をつないで、約 1 週間連続で使って問題ないことを確認しています（[検証状況](#検証状況)）。\
 > ライセンスは MIT です。
 
 ## Raspberry Pi へのインストール
@@ -405,14 +405,17 @@ mise run check    # = cargo fmt --check → cargo clippy --all-targets -D warnin
 | Linux amd64 / arm64 ビルド・`.deb` 生成（GitHub Actions） | ✅ 成功 |
 | Raspberry Pi 4: `.deb` のインストール・systemd での起動・LinuxKMS（GPU）での表示 | ✅ 確認済み（v0.0.3。EGL / GLES のライブラリを手動で追加する必要があった → v0.0.4 で `.deb` の依存に追加） |
 | v0.0.4 の `.deb` だけで追加作業なしに起動すること | ⏳ 未確認 |
-| libinput（キー入力）・CPU 描画（`linuxkms-software`）・720p など他の解像度 | ⏳ **未検証**（[手順](docs/linux-kms.md)） |
-| Raspberry Pi での性能・長時間稼働 | ⏳ **未検証** |
-| Raspberry Pi 用インストールスクリプト（`install-raspberry-pi.sh`） | ⏳ **未検証**（構文チェックのみ。実機・Release からのダウンロードは未実行） |
+| Raspberry Pi 4: libinput（キー入力） | ✅ 確認済み |
+| CPU 描画（`linuxkms-software`）・720p など他の解像度 | ⏳ **未検証**（[手順](docs/linux-kms.md)） |
+| Raspberry Pi 4 での長時間稼働 | ✅ センサー基板をつないだ状態で約 1 週間、連続稼働して問題なし |
+| Raspberry Pi での性能（FPS・メモリの計測） | ⏳ **未計測** |
+| Raspberry Pi 用インストールスクリプト（`install-raspberry-pi.sh`。I2C の有効化・権限の設定を含む） | ✅ Raspberry Pi 4 で確認済み |
 | 設定: `config edit` / `show` / `check`、テンプレートの全項目・既定値の照合（テスト）、設定エラー画面 | ✅ macOS で確認 |
-| 設定: Raspberry Pi での `config edit` → 再起動、インストーラーでの旧 `ui-overrides.toml` の移行 | ⏳ **未検証**（移行は手元で模擬実行のみ） |
+| 設定: Raspberry Pi での `config edit` → 再起動 | ✅ Raspberry Pi 4 で確認済み |
+| 設定: インストーラーでの旧 `ui-overrides.toml` の移行 | ✅ Raspberry Pi 4 で確認済み |
 | 室内センサー: ドライバー（偽の I2C での単体テスト）・サンプル値の表示（Overview / Radar / 設定画面） | ✅ 確認済み（macOS） |
-| 室内センサー: Raspberry Pi 実機・センサー基板での読み取り、`install-raspberry-pi.sh` の I2C 有効化・権限 | ⏳ **未検証**（基板は製造中） |
-| 日付が変わった直後の予定の取り直し | ⚠️ 待ち時間の計算は単体テストで確認。実際に 0 時をまたぐ動作は未確認 |
+| 室内センサー: Raspberry Pi 4 実機・センサー基板（[env-sensor-board](https://github.com/ynug/env-sensor-board)）での読み取り・表示 | ✅ 確認済み（約 1 週間、連続で使って問題なし） |
+| 日付が変わった直後の予定の取り直し | ✅ Raspberry Pi 4 で 0 時をまたぐ動作を確認済み（待ち時間の計算は単体テストでも確認） |
 
 ## 関連リポジトリ
 

@@ -3,8 +3,8 @@
 Home Display の本番構成（Debian minimal / Raspberry Pi OS Lite 64-bit で X11/Wayland なしに
 DRM/KMS へ直接描画）の検証手順と、現時点での検証状況をまとめます。
 
-> **重要:** このリポジトリの開発は macOS 上で行っており、LinuxKMS・DRM/KMS・GPU ドライバー・
-> libinput・systemd ユニットの動作は **まだ実機で一度も確認していません**。
+> **重要:** このリポジトリの開発は macOS 上で行っています。Raspberry Pi 4 では LinuxKMS（GPU）での表示・
+> systemd ユニットでの起動・約 1 週間の連続稼働を確認済みですが、下表の「未検証」の項目は実機で確認していません。
 > macOS でのビルド・テスト成功は Linux 実機での動作を保証しません。
 > Slint の LinuxKMS バックエンドは experimental 扱いのため、以下の PoC を独立した検証項目とします。
 
@@ -18,9 +18,9 @@ DRM/KMS へ直接描画）の検証手順と、現時点での検証状況をま
 | LinuxKMS (femtovg / OpenGL ES) で全画面表示 | ✅ Raspberry Pi 4 で起動・表示を確認（EGL / GLES の手動追加が必要だった。v0.0.4 で依存に追加） |
 | LinuxKMS (software renderer) で全画面表示 | ⏳ 未検証 |
 | root 以外 (video/render/input グループ) で DRM master を取得できる | ⏳ 未検証 |
-| libinput によるキー入力 | ⏳ 未検証 |
+| libinput によるキー入力 | ✅ Raspberry Pi 4 で確認 |
 | systemd ユニットの hardening 下での起動 | ✅ Raspberry Pi 4 で `.deb` のサービスとして起動を確認 |
-| 72 時間以上の連続稼働でメモリが増え続けない | ⏳ 未検証 |
+| 72 時間以上の連続稼働でメモリが増え続けない | ✅ Raspberry Pi 4 で約 1 週間、連続稼働して問題なし |
 | 1280×720 出力 + `SLINT_SCALE_FACTOR=0.6667` | ⏳ 未検証 |
 
 ## 2. 必要なもの
